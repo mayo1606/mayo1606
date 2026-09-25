@@ -1,0 +1,784 @@
+<title>Goku Alianzas Z</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bangers&family=Nunito:wght@400;700;900&display=swap">
+<style>
+:root{
+  --bg:#0c1130; --panel:#151c47; --panel2:#1d2660; --ink:#f5f2ff; --muted:#aab2dc;
+  --gi:#ff8a1f; --ki:#ffd84a; --belt:#3e74ff; --hp:#46e07c; --red:#ff4d5e;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Nunito',system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none}
+#game{position:fixed;inset:0}
+#game canvas{display:block}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:3px solid var(--ki);outline-offset:2px}
+.display{font-family:'Bangers','Impact',system-ui,sans-serif;letter-spacing:.04em;font-weight:400}
+
+/* Pantallas */
+.screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 30%,rgba(12,17,48,.55),rgba(6,8,24,.92));padding-inline:16px;padding-block:calc(16px + env(safe-area-inset-top,0px)) calc(16px + env(safe-area-inset-bottom,0px));overflow:auto;z-index:20}
+.card{width:100%;max-width:760px;display:flex;flex-direction:column;gap:18px;margin:auto}
+.logo{margin:0;font-size:clamp(52px,11vw,104px);line-height:.9;color:var(--gi);-webkit-text-stroke:3px #1a2a8a;text-shadow:0 6px 0 #1a2a8a,0 0 40px rgba(255,138,31,.35);text-wrap:balance;transform:rotate(-2deg)}
+.logo span{color:var(--ki)}
+.tag{margin:0;font-size:17px;color:var(--muted);max-width:60ch;line-height:1.5}
+.h2{margin:0;font-size:30px;color:var(--ki);text-wrap:balance}
+.label{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:900}
+.levels{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+.lvl{display:flex;flex-direction:column;gap:4px;text-align:left;padding:12px;border-radius:10px;background:var(--panel);border:2px solid #2a3480;transition:transform .12s,border-color .12s}
+.lvl:hover:not(:disabled){transform:translateY(-2px);border-color:var(--gi)}
+.lvl:disabled{opacity:.45;cursor:not-allowed}
+.lvl .n{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:900}
+.lvl .b{font-family:'Bangers','Impact',sans-serif;font-size:22px;letter-spacing:.03em;color:var(--ink)}
+.lvl .p{font-size:13px;color:var(--muted)}
+.lvl.done .n::after{content:" · vencido";color:var(--hp)}
+.controls{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 18px;font-size:14px;color:var(--muted)}
+.controls div{display:flex;gap:8px;align-items:center}
+kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border-radius:5px;background:var(--panel2);border:1px solid #3a4596;border-bottom-width:3px;color:var(--ink);font:700 12px/1.4 'Nunito',system-ui,sans-serif}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.btn{padding:12px 22px;border-radius:10px;border:0;background:var(--gi);color:#1b0f00;font-family:'Bangers','Impact',sans-serif;font-size:24px;letter-spacing:.05em;box-shadow:0 4px 0 #a14d00}
+.btn:active{transform:translateY(2px);box-shadow:0 2px 0 #a14d00}
+.btn.alt{background:var(--panel2);color:var(--ink);box-shadow:0 4px 0 #0a0e2a}
+.vs{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.vs .who{font-family:'Bangers','Impact',sans-serif;font-size:clamp(34px,7vw,56px);line-height:1}
+.vs .who.g{color:var(--gi)} .vs .who.e{color:var(--red)}
+.vs .x{font-family:'Bangers','Impact',sans-serif;font-size:28px;color:var(--muted)}
+.allylist{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:6px 10px;border-radius:999px;background:var(--panel2);font-size:14px;display:flex;gap:6px;align-items:center}
+.note{font-size:15px;color:var(--muted);line-height:1.5;margin:0;max-width:62ch}
+.note b{color:var(--ink)}
+
+/* HUD */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:10}
+.bars{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));width:min(40vw,340px);display:flex;flex-direction:column;gap:5px}
+.bars.left{left:16px} .bars.right{right:16px;align-items:flex-end}
+.nm{font-family:'Bangers','Impact',sans-serif;font-size:24px;letter-spacing:.04em;text-shadow:0 2px 0 #000}
+.bars.right .nm{color:#ffd0d4}
+.bar{width:100%;height:14px;border-radius:4px;background:rgba(0,0,0,.55);border:2px solid rgba(255,255,255,.25);overflow:hidden}
+.bar.thin{height:9px}
+.bar i{display:block;height:100%;width:100%;transition:width .12s}
+#pHp{background:linear-gradient(#7dffa8,var(--hp))}
+#pKi{background:linear-gradient(#fff2a8,var(--ki))}
+#bHp{background:linear-gradient(#ff8c96,var(--red));margin-left:auto}
+#allies{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;gap:8px;pointer-events:auto}
+.ally{position:relative;overflow:hidden;min-width:108px;padding:6px 10px;border-radius:9px;background:rgba(21,28,71,.88);border:2px solid var(--c,#fff);text-align:left;display:flex;flex-direction:column}
+.ally .k{font-size:11px;font-weight:900;color:var(--muted);letter-spacing:.1em}
+.ally .an{font-family:'Bangers','Impact',sans-serif;font-size:19px;letter-spacing:.03em}
+.ally .am{font-size:12px;color:var(--muted)}
+.ally .cd{position:absolute;inset:0;background:rgba(5,8,24,.72);transform-origin:left;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px}
+#banner{position:absolute;left:50%;top:22%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);text-align:center;font-family:'Bangers','Impact',sans-serif;font-size:clamp(26px,5vw,44px);letter-spacing:.04em;color:var(--ki);-webkit-text-stroke:1.5px #1a2a8a;text-shadow:0 3px 0 #1a2a8a;opacity:0;transition:opacity .25s}
+#banner.on{opacity:1}
+#pauseBtn{position:absolute;top:calc(64px + env(safe-area-inset-top,0px));right:16px;pointer-events:auto;width:40px;height:40px;border-radius:8px;border:2px solid rgba(255,255,255,.3);background:rgba(21,28,71,.8);font-weight:900}
+#hint{position:absolute;left:16px;bottom:calc(14px + env(safe-area-inset-bottom,0px));font-size:13px;color:rgba(255,255,255,.75);text-shadow:0 1px 2px #000;max-width:30ch;line-height:1.4}
+
+/* Controles táctiles */
+#touch{position:fixed;inset:0;pointer-events:none;z-index:11}
+#stick{position:absolute;left:22px;bottom:calc(96px + env(safe-area-inset-bottom,0px));width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.25);pointer-events:auto;touch-action:none}
+#knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:rgba(255,138,31,.75)}
+#tbtns{position:absolute;right:16px;bottom:calc(96px + env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:repeat(3,62px);gap:8px;pointer-events:auto}
+.tb{height:56px;border-radius:12px;border:2px solid rgba(255,255,255,.3);background:rgba(21,28,71,.78);font-weight:900;font-size:12px;touch-action:none}
+.tb.big{background:rgba(255,138,31,.85);color:#1b0f00}
+@media (pointer:coarse){#hint{display:none} #allies{bottom:calc(10px + env(safe-area-inset-bottom,0px))} .ally{min-width:84px;padding:4px 8px} .ally .am{display:none}}
+@media (max-width:520px){.nm{font-size:19px} .bars{width:42vw}}
+@media (prefers-reduced-motion:reduce){.lvl,.bar i,#banner{transition:none}}
+</style>
+
+<div id="game"></div>
+
+<div id="hud" hidden>
+  <div class="bars left">
+    <div class="nm">Goku</div>
+    <div class="bar"><i id="pHp"></i></div>
+    <div class="bar thin"><i id="pKi"></i></div>
+  </div>
+  <div class="bars right">
+    <div class="nm" id="bName">Jefe</div>
+    <div class="bar"><i id="bHp"></i></div>
+  </div>
+  <div id="banner"></div>
+  <button id="pauseBtn" aria-label="Pausa">II</button>
+  <div id="allies"></div>
+  <div id="hint">Mantén <kbd>R</kbd> para cargar ki. <kbd>L</kbd> lanza el Kamehameha.</div>
+</div>
+
+<div id="touch" hidden>
+  <div id="stick"><div id="knob"></div></div>
+  <div id="tbtns">
+    <button class="tb" data-k="Space">Subir</button>
+    <button class="tb" data-k="KeyE">Bloquear</button>
+    <button class="tb big" data-k="KeyJ">Golpe</button>
+    <button class="tb" data-k="ShiftLeft">Bajar</button>
+    <button class="tb" data-k="KeyR">Cargar</button>
+    <button class="tb big" data-k="KeyK">Ki</button>
+    <button class="tb big" data-k="KeyL" style="grid-column:3">Kame</button>
+  </div>
+</div>
+
+<!-- Menú principal -->
+<div class="screen" id="sTitle">
+  <div class="card">
+    <h1 class="logo display">Goku<br><span>Alianzas Z</span></h1>
+    <p class="tag">Vence a cada jefe y se une a tu equipo. En la siguiente pelea puedes llamarlo para que lance su ataque especial.</p>
+    <div class="label">Elige un nivel</div>
+    <div class="levels" id="levelList"></div>
+    <div class="label">Controles</div>
+    <div class="controls">
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> moverse</div>
+      <div><kbd>Espacio</kbd> subir · <kbd>Shift</kbd> bajar</div>
+      <div><kbd>J</kbd> golpe</div>
+      <div><kbd>K</kbd> ráfaga de ki</div>
+      <div><kbd>L</kbd> Kamehameha (45 de ki)</div>
+      <div><kbd>R</kbd> mantener para cargar ki</div>
+      <div><kbd>E</kbd> mantener para bloquear</div>
+      <div><kbd>1</kbd>–<kbd>4</kbd> llamar a un aliado</div>
+      <div><kbd>P</kbd> pausa</div>
+    </div>
+  </div>
+</div>
+
+<!-- Presentación del nivel -->
+<div class="screen" id="sIntro" hidden>
+  <div class="card">
+    <div class="label" id="iLevel">Nivel 1</div>
+    <div class="vs"><span class="who g">Goku</span><span class="x">VS</span><span class="who e" id="iBoss">Jefe</span></div>
+    <p class="note" id="iText"></p>
+    <div class="label">Tu equipo</div>
+    <div class="allylist" id="iAllies"></div>
+    <div class="row"><button class="btn" id="iGo">¡A pelear!</button><button class="btn alt" id="iBack">Menú</button></div>
+  </div>
+</div>
+
+<!-- Pausa -->
+<div class="screen" id="sPause" hidden>
+  <div class="card">
+    <h2 class="h2 display">Pausa</h2>
+    <div class="row"><button class="btn" id="pResume">Seguir</button><button class="btn alt" id="pRetry">Reiniciar nivel</button><button class="btn alt" id="pMenu">Menú</button></div>
+  </div>
+</div>
+
+<!-- Resultado -->
+<div class="screen" id="sEnd" hidden>
+  <div class="card">
+    <h2 class="h2 display" id="eTitle" style="font-size:44px"></h2>
+    <p class="note" id="eText"></p>
+    <div class="row"><button class="btn" id="eNext"></button><button class="btn alt" id="eMenu">Menú</button></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const V = THREE.Vector3;
+const UP = new V(0, 1, 0);
+
+/* ---------- Datos del juego ---------- */
+const LEVELS = [
+  { place:'Planeta Namekusei', boss:'Piccolo Daimaku', look:'piccolo', env:'namek', hp:160, mult:1, spd:6.5, blast:2.4, special:10,
+    color:0xfff27a, move:'Makankosappo',
+    intro:'El Rey Demonio Piccolo llegó a Namekusei y quiere conquistarlo. Es el primer jefe: aprende a golpear, cargar ki y esquivar su ataque especial.' },
+  { place:'Tierra: páramo rocoso', boss:'Vegeta', look:'vegeta', env:'tierra', hp:230, mult:1.25, spd:7.5, blast:2.0, special:9,
+    color:0xc58bff, move:'Galick Gun',
+    intro:'El Príncipe de los Saiyajin quiere demostrar que es más fuerte que tú. Llama a Piccolo con la tecla 1 cuando lo necesites.' },
+  { place:'Namekusei en ruinas', boss:'Freezer', look:'freezer', env:'ruinas', hp:310, mult:1.5, spd:8.5, blast:1.6, special:8,
+    color:0xff5fb0, move:'Rayo mortal',
+    intro:'Freezer está destruyendo el planeta. Es rápido y dispara mucho. Ahora tienes a Piccolo y a Vegeta de tu lado.' },
+  { place:'Arena de los Juegos de Cell', boss:'Cell', look:'cell', env:'arena', hp:400, mult:1.8, spd:9, blast:1.35, special:7.5,
+    color:0x6fd6ff, move:'Kamehameha perfecto',
+    intro:'Cell organizó su propio torneo. Sus golpes duelen mucho: bloquea cuando esté cerca y usa a todo tu equipo.' },
+  { place:'Planeta Sagrado', boss:'Majin Buu', look:'buu', env:'sagrado', hp:520, mult:2.1, spd:9.5, blast:1.15, special:6.5,
+    color:0xff9ecb, move:'Rayo de caramelo',
+    intro:'El jefe final. Majin Buu no se cansa nunca. Piccolo, Vegeta, Freezer y Cell pelean contigo.' },
+];
+const ALLY_CD = 18;
+
+let progress = 0;
+try { progress = Math.min(LEVELS.length, parseInt(localStorage.getItem('gaz-progress') || '0', 10) || 0); } catch (e) {}
+function saveProgress() { try { localStorage.setItem('gaz-progress', String(progress)); } catch (e) {} }
+
+/* ---------- Motor ---------- */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+$('game').appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 700);
+function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+scene.add(new THREE.HemisphereLight(0xffffff, 0x4a5566, 0.85));
+const sunLight = new THREE.DirectionalLight(0xffffff, 0.85); sunLight.position.set(30, 60, 20); scene.add(sunLight);
+let world = new THREE.Group(); scene.add(world);
+
+const M = (c, e) => new THREE.MeshStandardMaterial({ color:c, roughness:.75, flatShading:true, emissive:e || 0 });
+const glow = (c, o) => new THREE.MeshBasicMaterial({ color:c, transparent:true, opacity:o, blending:THREE.AdditiveBlending, depthWrite:false });
+
+/* ---------- Personajes hechos con piezas ---------- */
+const LOOKS = {
+  goku:    { skin:0xffd3a8, torso:0xff7a1a, legs:0xff7a1a, arms:'skin', belt:0x2b5cff, boots:0x2b5cff, wrist:0x2b5cff, hair:'goku', hairC:0x111111 },
+  piccolo: { skin:0x5fbf4a, torso:0x5a2d86, legs:0x5a2d86, arms:'skin', belt:0x3fa0e0, boots:0x7a4a2a, hair:'piccolo', hairC:0xf4f4f4, cape:0xf2f2f2 },
+  vegeta:  { skin:0xffd3a8, torso:0x2442a8, legs:0x2442a8, arms:0x2442a8, armor:0xf5f5f5, belt:0x2442a8, boots:0xf5f5f5, hair:'vegeta', hairC:0x111111 },
+  freezer: { skin:0xf1f0f6, torso:0xf1f0f6, legs:0xf1f0f6, arms:'skin', belt:0xf1f0f6, boots:0xf1f0f6, hair:'freezer', hairC:0x8a3cc8, tail:true },
+  cell:    { skin:0xe8dcc8, torso:0x7fcf5a, legs:0x7fcf5a, arms:0x7fcf5a, belt:0x222222, boots:0x222222, hair:'cell', hairC:0x2a2a2a, spots:true, tail:true, wings:true },
+  buu:     { skin:0xff9ecb, torso:0x222222, legs:0xffffff, arms:'skin', belt:0xffd23f, boots:0xffd23f, hair:'buu', hairC:0xff9ecb, fat:true, cape:0x7a3cc8 },
+};
+
+function makeFighter(key) {
+  const L = LOOKS[key], g = new THREE.Group(), mats = [];
+  const add = (geo, color, x, y, z, parent) => { const m = M(color); mats.push(m); const mesh = new THREE.Mesh(geo, m); mesh.position.set(x, y, z); (parent || g).add(mesh); return mesh; };
+  const B = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+  const tw = L.fat ? 1.2 : 0.8, td = L.fat ? 0.8 : 0.45;
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const leg = new THREE.Group(); leg.position.set(s * 0.21, 0.95, 0); g.add(leg);
+    add(B(0.3, 0.75, 0.32), L.legs, 0, -0.4, 0, leg);
+    add(B(0.34, 0.25, 0.42), L.boots, 0, -0.82, 0.04, leg);
+    legs.push(leg);
+  }
+  add(B(tw, 0.8, td), L.torso, 0, 1.38, 0);
+  add(B(tw + 0.02, 0.14, td + 0.02), L.belt, 0, 1.0, 0);
+  if (L.armor) { add(B(tw + 0.08, 0.46, td + 0.1), L.armor, 0, 1.55, 0); add(B(0.3, 0.12, 0.5), L.armor, -0.5, 1.8, 0); add(B(0.3, 0.12, 0.5), L.armor, 0.5, 1.8, 0); }
+  if (L.fat) add(new THREE.SphereGeometry(0.62, 12, 10), L.skin, 0, 1.25, 0.12);
+  if (L.spots) for (const [x, y] of [[-0.2, 1.5], [0.18, 1.3], [0.05, 1.62], [-0.1, 1.18]]) add(B(0.1, 0.1, 0.02), 0x1f2a18, x, y, td / 2 + 0.01);
+  if (L.cape) { add(B(tw + 0.3, 1.5, 0.06), L.cape, 0, 1.1, -td / 2 - 0.08); if (key === 'piccolo') { add(B(0.36, 0.2, 0.5), L.cape, -0.52, 1.82, 0); add(B(0.36, 0.2, 0.5), L.cape, 0.52, 1.82, 0); } }
+  if (L.tail) { const t = add(new THREE.CylinderGeometry(0.06, 0.14, 1.3, 6), L.torso, 0, 0.75, -0.7); t.rotation.x = -1.1; }
+  if (L.wings) for (const s of [-1, 1]) { const w = add(B(0.06, 0.9, 0.5), 0x1d1d1d, s * 0.28, 1.5, -0.45); w.rotation.z = s * 0.35; }
+  const arms = [];
+  const armC = L.arms === 'skin' ? L.skin : L.arms;
+  for (const s of [-1, 1]) {
+    const arm = new THREE.Group(); arm.position.set(s * (tw / 2 + 0.13), 1.7, 0); g.add(arm);
+    add(B(0.22, 0.7, 0.22), armC, 0, -0.35, 0, arm);
+    add(B(0.25, 0.2, 0.25), L.wrist || (L.arms === 'skin' ? L.skin : 0xf5f5f5), 0, -0.62, 0, arm);
+    arms.push(arm);
+  }
+  const head = new THREE.Group(); head.position.set(0, 2.06, 0); g.add(head);
+  add(new THREE.SphereGeometry(0.3, 12, 10), L.skin, 0, 0, 0, head);
+  add(B(0.07, 0.09, 0.03), 0x111111, -0.1, 0.03, 0.28, head);
+  add(B(0.07, 0.09, 0.03), 0x111111, 0.1, 0.03, 0.28, head);
+  const cap = r => new THREE.SphereGeometry(r, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  const cone = (r, h) => new THREE.ConeGeometry(r, h, 5);
+  if (L.hair === 'goku') {
+    add(cap(0.315), L.hairC, 0, 0.03, -0.02, head);
+    const spikes = [[0,.28,-.05,0,0],[.2,.2,0,0,-.9],[-.2,.2,0,0,.9],[.12,.16,-.2,-.6,-.4],[-.12,.16,-.2,-.6,.4],[0,.1,-.28,-1.2,0],[.26,.05,-.1,-.3,-1.4],[-.26,.05,-.1,-.3,1.4],[.09,.3,.12,.45,-.3],[-.09,.3,.12,.45,.3]];
+    for (const [x, y, z, rx, rz] of spikes) { const c = add(cone(0.12, 0.5), L.hairC, x, y, z, head); c.rotation.set(rx, 0, rz); }
+  } else if (L.hair === 'vegeta') {
+    add(cap(0.315), L.hairC, 0, 0.03, -0.02, head);
+    const spikes = [[0,.45,-.05,-.15,0],[.13,.42,-.05,-.1,-.25],[-.13,.42,-.05,-.1,.25],[.22,.32,-.05,0,-.5],[-.22,.32,-.05,0,.5],[0,.4,-.18,-.35,0]];
+    for (const [x, y, z, rx, rz] of spikes) { const c = add(cone(0.12, 0.75), L.hairC, x, y, z, head); c.rotation.set(rx, 0, rz); }
+  } else if (L.hair === 'piccolo') {
+    const t = add(cap(0.34), L.hairC, 0, 0.04, -0.02, head); t.scale.set(1, 1.25, 1);
+    add(B(0.62, 0.08, 0.62), 0x5a2d86, 0, 0.08, -0.02, head);
+    for (const s of [-1, 1]) {
+      const a = add(new THREE.CylinderGeometry(0.02, 0.025, 0.42, 5), L.skin, s * 0.1, 0.34, 0.22, head); a.rotation.x = 0.5;
+      const e = add(cone(0.06, 0.26), L.skin, s * 0.32, 0.05, 0, head); e.rotation.z = -s * 1.3;
+    }
+  } else if (L.hair === 'freezer') {
+    const d = add(cap(0.33), L.hairC, 0, 0.05, -0.02, head); d.scale.set(1, 1.15, 1.15);
+  } else if (L.hair === 'cell') {
+    for (const s of [-1, 1]) { const c = add(cone(0.1, 0.6), L.hairC, s * 0.2, 0.34, -0.05, head); c.rotation.z = -s * 0.25; }
+    add(cap(0.31), 0x7fcf5a, 0, 0.03, -0.03, head);
+  } else if (L.hair === 'buu') {
+    const a = add(new THREE.CylinderGeometry(0.05, 0.11, 0.6, 7), L.skin, 0, 0.36, -0.14, head); a.rotation.x = -0.75;
+  }
+  const aura = new THREE.Mesh(new THREE.SphereGeometry(1.3, 16, 12), glow(0xffe066, 0));
+  aura.scale.set(1, 1.55, 1); aura.position.y = 1.2; g.add(aura);
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.75, 20), new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:.35, depthWrite:false }));
+  shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
+  scene.add(g);
+  return { g, mats, arms, legs, head, aura, shadow, flash:0, punchT:0 };
+}
+function removeFighter(f) { if (!f) return; scene.remove(f.g); scene.remove(f.shadow); }
+
+/* ---------- Escenarios ---------- */
+function rng(seed) { return () => (seed = (seed * 16807) % 2147483647, (seed - 1) / 2147483646); }
+const ENVS = {
+  namek:   { sky:0x8fe3c9, fog:0xa8ecd6, ground:0x6fbf55 },
+  tierra:  { sky:0x86b8f0, fog:0xb5d2f2, ground:0xcaa06a },
+  ruinas:  { sky:0xc8603a, fog:0xd07a4f, ground:0x55603f },
+  arena:   { sky:0x8ec6f5, fog:0xb8daf7, ground:0x6fb35a },
+  sagrado: { sky:0x4d3a8f, fog:0x6c58ad, ground:0x7cc06a },
+};
+function buildEnv(type) {
+  scene.remove(world); world = new THREE.Group(); scene.add(world);
+  const E = ENVS[type], r = rng(type.length * 97 + 13);
+  scene.background = new THREE.Color(E.sky);
+  scene.fog = new THREE.Fog(E.fog, 70, 230);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(260, 48), M(E.ground)); ground.rotation.x = -Math.PI / 2; world.add(ground);
+  const put = (mesh, x, y, z) => { mesh.position.set(x, y, z); world.add(mesh); return mesh; };
+  const around = (min, max) => { const a = r() * Math.PI * 2, d = min + r() * (max - min); return [Math.cos(a) * d, Math.sin(a) * d]; };
+  const flat = (rad, mat, x, z, y) => { const m = new THREE.Mesh(new THREE.CircleGeometry(rad, 28), mat); m.rotation.x = -Math.PI / 2; return put(m, x, y || 0.03, z); };
+  // Borde del área de pelea
+  const ring = new THREE.Mesh(new THREE.RingGeometry(69, 70, 64), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:.25 })); ring.rotation.x = -Math.PI / 2; put(ring, 0, 0.05, 0);
+
+  if (type === 'namek') {
+    for (let i = 0; i < 7; i++) { const [x, z] = around(20, 120); flat(6 + r() * 12, M(0x3fb8a8), x, z); }
+    for (let i = 0; i < 45; i++) {
+      const [x, z] = around(22, 140), h = 4 + r() * 5;
+      put(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, h, 6), M(0x8a6a3a)), x, h / 2, z);
+      put(new THREE.Mesh(new THREE.SphereGeometry(1.6 + r(), 8, 6), M(0x2f9f8a)), x, h + 0.8, z);
+    }
+    for (let i = 0; i < 7; i++) {
+      const [x, z] = around(30, 110), s = 2.5 + r() * 2;
+      put(new THREE.Mesh(new THREE.SphereGeometry(s, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), M(0xf2f7ee)), x, 0, z);
+      put(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.2, 10), M(0x2d6b64)), x, s * 0.55, z + s * 0.83).rotation.x = Math.PI / 2;
+    }
+    for (let i = 0; i < 14; i++) { const [x, z] = around(90, 200), h = 15 + r() * 30; put(new THREE.Mesh(new THREE.CylinderGeometry(4 + r() * 5, 7 + r() * 6, h, 7), M(0x7fb07a)), x, h / 2, z); }
+    // Namekusei tiene tres soles
+    for (let i = 0; i < 3; i++) { const s = new THREE.Mesh(new THREE.SphereGeometry(7, 16, 12), new THREE.MeshBasicMaterial({ color:0xfffbe0, fog:false })); put(s, -120 + i * 40, 90 + i * 12, -260); }
+  } else if (type === 'tierra') {
+    for (let i = 0; i < 30; i++) { const [x, z] = around(35, 170), h = 6 + r() * 22, rad = 3 + r() * 6; put(new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 1.25, h, 8), M(0xa8744a)), x, h / 2, z); }
+    for (let i = 0; i < 40; i++) { const [x, z] = around(15, 120); put(new THREE.Mesh(new THREE.DodecahedronGeometry(0.6 + r() * 1.4), M(0x9a7550)), x, 0.4, z); }
+  } else if (type === 'ruinas') {
+    for (let i = 0; i < 10; i++) { const [x, z] = around(18, 120); flat(4 + r() * 10, new THREE.MeshBasicMaterial({ color:0xff6a1a }), x, z); }
+    for (let i = 0; i < 35; i++) { const [x, z] = around(20, 150), s = 2 + r() * 6; const b = put(new THREE.Mesh(new THREE.BoxGeometry(s, s * 1.5, s), M(0x4a4136)), x, s * 0.5, z); b.rotation.set(r() * .8, r() * 3, r() * .8); }
+    for (let i = 0; i < 12; i++) { const [x, z] = around(25, 110), h = 3 + r() * 3; put(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.25, h, 5), M(0x3b2f24)), x, h / 2, z); }
+  } else if (type === 'arena') {
+    const plat = put(new THREE.Mesh(new THREE.PlaneGeometry(40, 40), M(0xe6e2d6)), 0, 0.04, 0); plat.rotation.x = -Math.PI / 2;
+    const grid = new THREE.GridHelper(40, 10, 0xb9b3a0, 0xb9b3a0); grid.position.y = 0.06; world.add(grid);
+    for (const [x, z] of [[-20, -20], [20, -20], [-20, 20], [20, 20]]) put(new THREE.Mesh(new THREE.BoxGeometry(1.2, 4, 1.2), M(0xdad5c4)), x, 2, z);
+    for (let i = 0; i < 18; i++) { const [x, z] = around(110, 210), h = 20 + r() * 40; put(new THREE.Mesh(new THREE.ConeGeometry(10 + r() * 12, h, 6), M(0x5b8f5a)), x, h / 2, z); }
+  } else if (type === 'sagrado') {
+    for (let i = 0; i < 40; i++) {
+      const [x, z] = around(20, 150), s = 1 + r() * 3;
+      const c = put(new THREE.Mesh(new THREE.OctahedronGeometry(s), M(r() > .5 ? 0xb88cff : 0x7fe6ff, 0x221144)), x, s, z); c.scale.y = 2; c.rotation.y = r() * 3;
+    }
+    for (let i = 0; i < 10; i++) { const [x, z] = around(60, 160), s = 5 + r() * 8; put(new THREE.Mesh(new THREE.DodecahedronGeometry(s), M(0x6aa05a)), x, 25 + r() * 30, z); }
+    const stars = new THREE.BufferGeometry(), pts = [];
+    for (let i = 0; i < 500; i++) { const a = r() * Math.PI * 2, b = r() * 1.2 + 0.2, d = 300; pts.push(Math.cos(a) * Math.cos(b) * d, Math.sin(b) * d, Math.sin(a) * Math.cos(b) * d); }
+    stars.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    world.add(new THREE.Points(stars, new THREE.PointsMaterial({ color:0xffffff, size:1.5, fog:false })));
+  }
+}
+
+/* ---------- Entrada ---------- */
+const keys = new Set(), pressed = new Set();
+const stick = { x:0, y:0 };
+addEventListener('keydown', e => {
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  if (!e.repeat) pressed.add(e.code);
+  keys.add(e.code);
+  if ((e.code === 'KeyP' || e.code === 'Escape') && !e.repeat) { if (G.mode === 'play') pause(true); else if (G.mode === 'paused') pause(false); }
+});
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+const held = (...c) => c.some(k => keys.has(k));
+
+const isTouch = matchMedia('(pointer:coarse)').matches;
+document.querySelectorAll('#tbtns .tb').forEach(b => {
+  const k = b.dataset.k;
+  b.addEventListener('pointerdown', e => { e.preventDefault(); keys.add(k); pressed.add(k); });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, () => keys.delete(k));
+});
+(() => {
+  const el = $('stick'), knob = $('knob'); let id = null;
+  const set = e => { const r = el.getBoundingClientRect(); let x = (e.clientX - r.left - r.width / 2) / (r.width / 2), y = (e.clientY - r.top - r.height / 2) / (r.height / 2); const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; } stick.x = x; stick.y = -y; knob.style.transform = `translate(${x * 37}px,${y * 37}px)`; };
+  el.addEventListener('pointerdown', e => { id = e.pointerId; el.setPointerCapture(id); set(e); });
+  el.addEventListener('pointermove', e => { if (e.pointerId === id) set(e); });
+  const end = () => { id = null; stick.x = stick.y = 0; knob.style.transform = ''; };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+})();
+
+/* ---------- Estado ---------- */
+const G = { mode:'title', level:0, t:0, endT:0, shake:0, won:false };
+let P = null, B = null, allies = [], projectiles = [], beams = [], allyFx = [], effects = [];
+const camLook = new V();
+
+function clearFx() {
+  for (const p of projectiles) scene.remove(p.mesh);
+  for (const b of beams) scene.remove(b.mesh);
+  for (const a of allyFx) removeFighter(a.f);
+  for (const e of effects) scene.remove(e.mesh);
+  projectiles = []; beams = []; allyFx = []; effects = [];
+}
+
+function startLevel(i) {
+  G.level = i; G.t = 0; G.won = false; G.endT = 0; G.shake = 0;
+  const L = LEVELS[i];
+  clearFx(); removeFighter(P && P.f); removeFighter(B && B.f);
+  buildEnv(L.env);
+  P = { f:makeFighter('goku'), pos:new V(0, 0, 22), knock:new V(), hp:100, ki:60, cdPunch:0, cdBlast:0, kame:null, block:false, charging:false, fwd:new V(0, 0, -1) };
+  B = { f:makeFighter(L.look), pos:new V(0, 0, -18), knock:new V(), hp:L.hp, max:L.hp, L, cdMelee:1.5, cdBlast:2.5, cdSpecial:6, state:'move', t:0, aim:null, stun:0, dead:false };
+  allies = LEVELS.slice(0, i).map((l, j) => ({ name:l.boss === 'Piccolo Daimaku' ? 'Piccolo' : l.boss, move:l.move, color:l.color, look:l.look, key:'Digit' + (j + 1), n:j + 1, cd:0 }));
+  $('bName').textContent = L.boss;
+  $('allies').innerHTML = allies.map((a, j) => `<button class="ally" data-j="${j}" style="--c:#${a.color.toString(16).padStart(6, '0')}"><span class="k">TECLA ${a.n}</span><span class="an">${a.name}</span><span class="am">${a.move}</span><span class="cd" hidden></span></button>`).join('');
+  $('allies').querySelectorAll('.ally').forEach(b => b.addEventListener('pointerdown', e => { e.preventDefault(); summon(+b.dataset.j); }));
+  camera.position.set(0, 4, 32); camLook.set(0, 1.5, 0);
+  showOnly(null); $('hud').hidden = false; $('touch').hidden = !isTouch;
+  G.mode = 'play';
+  banner(`Nivel ${i + 1}: ${L.place}`, 2200);
+}
+
+/* ---------- Utilidades de combate ---------- */
+const chest = o => o.pos.clone().add(new V(0, 1.4, 0));
+function segDist(p, a, d, len) { const t = Math.max(0, Math.min(len, p.clone().sub(a).dot(d))); return a.clone().addScaledVector(d, t).distanceTo(p); }
+let bannerTimer = 0;
+function banner(text, ms) { const b = $('banner'); b.textContent = text; b.classList.add('on'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => b.classList.remove('on'), ms || 1600); }
+
+function spark(pos, color, size, life) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), glow(color, .9));
+  m.position.copy(pos); m.scale.setScalar(0.2); scene.add(m);
+  effects.push({ mesh:m, t:0, life:life || 0.3, size:size || 1.2 });
+}
+
+function hurtBoss(d, kb) {
+  if (B.dead) return;
+  B.hp -= d; B.f.flash = 0.12;
+  if (kb) { B.knock.add(kb); B.stun = Math.max(B.stun, 0.25); }
+  if (B.hp <= 0) {
+    B.hp = 0; B.dead = true; G.won = true; G.endT = 2.4; G.mode = 'ending';
+    for (const p of projectiles) scene.remove(p.mesh); projectiles = [];
+    beams = beams.filter(b => { if (b.target === 'player') { scene.remove(b.mesh); return false; } return true; });
+    spark(chest(B), 0xffffff, 6, 0.8); G.shake = 0.8;
+    banner(`¡${B.L.boss} fue derrotado!`, 2400);
+  }
+}
+function hurtPlayer(d, kb) {
+  if (G.mode !== 'play') return;
+  if (P.block) { d *= 0.25; if (kb) kb.multiplyScalar(0.3); }
+  P.hp -= d; P.f.flash = 0.12; G.shake = Math.max(G.shake, P.block ? 0.1 : 0.3);
+  if (kb) P.knock.add(kb);
+  if (P.hp <= 0) { P.hp = 0; G.won = false; G.endT = 1.6; G.mode = 'ending'; P.kame = null; banner('¡Goku cayó!', 1600); }
+}
+
+const CYL = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true);
+function makeBeam(opts) {
+  const g = new THREE.Group();
+  const outer = new THREE.Mesh(CYL, glow(opts.color, .55)), core = new THREE.Mesh(CYL, new THREE.MeshBasicMaterial({ color:0xffffff }));
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), glow(opts.color, .8));
+  outer.scale.set(opts.w, 1, opts.w); core.scale.set(opts.w * .4, 1, opts.w * .4); tip.scale.setScalar(opts.w * 1.5);
+  g.add(outer, core, tip); scene.add(g);
+  const b = Object.assign({ mesh:g, parts:[outer, core], tip, len:0, age:0 }, opts);
+  beams.push(b); return b;
+}
+
+function fireBlast(from, to, color, dmg, speed, target) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), glow(color, .95));
+  m.position.copy(from); scene.add(m);
+  projectiles.push({ mesh:m, vel:to.clone().sub(from).normalize().multiplyScalar(speed), dmg, target, life:3, color });
+}
+
+function summon(j) {
+  const a = allies[j];
+  if (!a || a.cd > 0 || G.mode !== 'play' || B.dead) return;
+  a.cd = ALLY_CD;
+  const right = new V(-P.fwd.z, 0, P.fwd.x), side = allyFx.length % 2 ? -1 : 1;
+  const f = makeFighter(a.look);
+  const pos = P.pos.clone().addScaledVector(right, 2.6 * side).addScaledVector(P.fwd, -1.2); pos.y += 0.6;
+  f.g.scale.setScalar(0.01);
+  allyFx.push({ f, pos, a, t:0, fired:false });
+  spark(pos.clone().add(new V(0, 1.2, 0)), a.color, 2.2, 0.35);
+  banner(`¡${a.name}: ${a.move}!`, 1500);
+}
+
+/* ---------- Animación de personajes ---------- */
+function pose(o, target, moving, dt) {
+  const f = o.f;
+  f.g.position.copy(o.pos);
+  const dx = target.x - o.pos.x, dz = target.z - o.pos.z;
+  if (dx * dx + dz * dz > 0.001) f.g.rotation.y = Math.atan2(dx, dz);
+  const flying = o.pos.y > 0.4, t = G.t;
+  const swing = moving && !flying ? Math.sin(t * 11) * 0.6 : 0;
+  f.legs[0].rotation.x = flying ? 0.35 : swing; f.legs[1].rotation.x = flying ? 0.2 : -swing;
+  f.g.rotation.x = 0;
+  let [la, ra] = f.arms;
+  la.rotation.set(flying ? 0.3 : -swing * 0.6, 0, 0); ra.rotation.set(flying ? 0.3 : swing * 0.6, 0, 0);
+  if (o.charging) { la.rotation.set(0, 0, -0.5); ra.rotation.set(0, 0, 0.5); }
+  if (o.block) { la.rotation.set(-1.5, 0, 0.7); ra.rotation.set(-1.5, 0, -0.7); }
+  if (o.beamPose) { la.rotation.set(-1.5, 0, -0.15); ra.rotation.set(-1.5, 0, 0.15); }
+  if (f.punchT > 0) { f.punchT -= dt; ra.rotation.set(-1.6, 0, 0); }
+  f.aura.material.opacity += ((o.auraOn ? 0.28 : 0) - f.aura.material.opacity) * Math.min(1, dt * 8);
+  if (o.auraColor) f.aura.material.color.setHex(o.auraColor);
+  f.aura.scale.set(1 + Math.sin(t * 20) * 0.05, 1.55, 1);
+  f.flash = Math.max(0, f.flash - dt);
+  const e = f.flash > 0 ? 0.8 : 0;
+  for (const m of f.mats) m.emissive.setRGB(e, e, e);
+  f.shadow.position.set(o.pos.x, 0.07, o.pos.z);
+  const s = Math.max(0.3, 1 - o.pos.y / 25); f.shadow.scale.setScalar(s); f.shadow.material.opacity = 0.35 * s;
+}
+
+/* ---------- Bucle de juego ---------- */
+function clampArena(o) {
+  o.pos.y = Math.max(0, Math.min(38, o.pos.y));
+  const h = Math.hypot(o.pos.x, o.pos.z);
+  if (h > 68) { o.pos.x *= 68 / h; o.pos.z *= 68 / h; }
+}
+
+function update(dt) {
+  G.t += dt;
+  const L = B.L, playing = G.mode === 'play';
+
+  /* Goku */
+  const toB = B.pos.clone().sub(P.pos); toB.y = 0;
+  if (toB.lengthSq() > 0.01) P.fwd.copy(toB.normalize());
+  const fwd = P.fwd, right = new V(-fwd.z, 0, fwd.x);
+  let ax = stick.x, az = stick.y, ay = 0;
+  if (held('KeyW', 'ArrowUp')) az += 1; if (held('KeyS', 'ArrowDown')) az -= 1;
+  if (held('KeyA', 'ArrowLeft')) ax -= 1; if (held('KeyD', 'ArrowRight')) ax += 1;
+  if (held('Space')) ay += 1; if (held('ShiftLeft', 'ShiftRight', 'KeyC')) ay -= 1;
+  P.block = playing && held('KeyE') && !P.kame;
+  P.charging = playing && held('KeyR') && !P.kame && !P.block;
+  let moving = false;
+  if (!P.charging && !P.kame && P.hp > 0) {
+    const mv = fwd.clone().multiplyScalar(az).addScaledVector(right, ax);
+    if (mv.lengthSq() > 0.02) { moving = true; if (mv.length() > 1) mv.normalize(); P.pos.addScaledVector(mv, (P.block ? 5 : 12) * dt); }
+    P.pos.y += ay * 10 * dt;
+  }
+  if (P.hp <= 0) P.pos.y = Math.max(0, P.pos.y - 8 * dt);
+  P.pos.addScaledVector(P.knock, dt); P.knock.multiplyScalar(Math.exp(-5 * dt));
+  const sep = P.pos.clone().sub(B.pos), sl = sep.length(); if (sl < 1.3 && !B.dead) P.pos.addScaledVector(sl > 0.01 ? sep.divideScalar(sl) : new V(0, 0, 1), 1.3 - sl);
+  clampArena(P);
+  P.ki = Math.min(100, P.ki + (P.charging ? 38 : 4) * dt);
+  P.cdPunch -= dt; P.cdBlast -= dt;
+
+  if (playing && !P.block && !P.charging && !P.kame) {
+    if (held('KeyJ') && P.cdPunch <= 0) {
+      P.cdPunch = 0.32; P.f.punchT = 0.16;
+      if (chest(P).distanceTo(chest(B)) < 3.3 && !B.dead) {
+        hurtBoss(7, fwd.clone().multiplyScalar(14)); spark(chest(B).addScaledVector(fwd, -0.4), 0xffffff, 1.4); G.shake = Math.max(G.shake, 0.15);
+      }
+    }
+    if (held('KeyK') && P.cdBlast <= 0 && P.ki >= 6 && !B.dead) {
+      P.cdBlast = 0.26; P.ki -= 6; P.f.punchT = 0.12;
+      fireBlast(chest(P).addScaledVector(fwd, 0.8).addScaledVector(right, 0.5), chest(B), 0x9fdcff, 5, 34, 'boss');
+    }
+    if (pressed.has('KeyL') && !B.dead) {
+      if (P.ki >= 45) { P.ki -= 45; P.kame = { t:0, beam:null }; banner('¡Ka… me… ha… me…!', 900); }
+      else banner('Te falta ki: mantén R para cargar', 1400);
+    }
+  }
+  for (let j = 0; j < allies.length; j++) if (pressed.has('Digit' + (j + 1))) summon(j);
+
+  if (P.kame) {
+    const k = P.kame; k.t += dt;
+    if (k.t > 0.75 && !k.beam && playing && !B.dead) {
+      banner('¡HAAAA!', 900); G.shake = 0.25;
+      k.beam = makeBeam({ color:0x6fc8ff, w:0.55, target:'boss', dps:32, life:1.1, grow:90,
+        from:() => chest(P).addScaledVector(P.fwd, 0.9), to:() => chest(B) });
+    }
+    if (k.t > 1.95 || P.hp <= 0) P.kame = null;
+  }
+  P.auraOn = P.charging || (P.kame && P.kame.t < 0.75); P.auraColor = P.kame ? 0x6fc8ff : 0xffe066;
+  P.beamPose = !!P.kame;
+  pose(P, B.pos, moving, dt);
+  if (P.kame && P.kame.t < 0.75) spark(chest(P).addScaledVector(fwd, 0.7), 0x6fc8ff, 0.5, 0.12);
+
+  /* Jefe */
+  let bMoving = false;
+  B.cdMelee -= dt; B.cdBlast -= dt; B.cdSpecial -= dt; B.stun -= dt;
+  B.beamPose = false; B.auraOn = false;
+  if (B.dead) {
+    B.pos.y = Math.max(0, B.pos.y - 7 * dt);
+    B.f.g.rotation.z = Math.min(Math.PI / 2, B.f.g.rotation.z + dt * 2);
+  } else if (playing) {
+    const enr = B.hp < B.max * 0.4 ? 0.7 : 1;
+    const to = chest(P).sub(chest(B)), dist = to.length();
+    const hd = Math.hypot(to.x, to.z);
+    if (B.state === 'windup') {
+      B.t -= dt; B.auraOn = true; B.auraColor = L.color; B.beamPose = true;
+      spark(chest(B).addScaledVector(to.clone().normalize(), 0.8), L.color, 0.7, 0.12);
+      if (B.t < 0.35 && !B.aim) B.aim = chest(P);
+      if (B.t <= 0) {
+        const from = chest(B), dir = B.aim.clone().sub(from).normalize();
+        makeBeam({ color:L.color, w:0.7, target:'player', dps:30 * L.mult, life:0.9, grow:75, maxLen:90,
+          from:() => from, dir:() => dir });
+        B.state = 'beam'; B.t = 0.9; G.shake = 0.2;
+      }
+    } else if (B.state === 'beam') {
+      B.t -= dt; B.beamPose = true; if (B.t <= 0) B.state = 'move';
+    } else if (B.stun <= 0) {
+      const dirH = new V(to.x, 0, to.z).normalize(), side = new V(-dirH.z, 0, dirH.x);
+      const mv = new V();
+      if (hd > 2.6) mv.addScaledVector(dirH, hd > 14 ? 1 : 0.55);
+      mv.addScaledVector(side, Math.sin(G.t * 0.9) * 0.6);
+      B.pos.addScaledVector(mv, L.spd * dt); bMoving = mv.lengthSq() > 0.05;
+      B.pos.y += Math.max(-1, Math.min(1, P.pos.y - B.pos.y)) * L.spd * 0.6 * dt;
+      if (dist < 3.1 && B.cdMelee <= 0) {
+        B.cdMelee = 1.15 * enr; B.f.punchT = 0.18;
+        hurtPlayer(7 * L.mult, dirH.clone().multiplyScalar(13)); spark(chest(P), 0xffffff, 1.3);
+      }
+      if (dist > 5 && B.cdBlast <= 0) {
+        B.cdBlast = L.blast * enr * (0.8 + Math.random() * 0.4); B.f.punchT = 0.14;
+        fireBlast(chest(B).addScaledVector(dirH, 0.8), chest(P), L.color, 5 * L.mult, 22 + G.level * 2, 'player');
+      }
+      if (B.cdSpecial <= 0 && dist > 4) {
+        B.cdSpecial = L.special * enr; B.state = 'windup'; B.t = 1.25; B.aim = null;
+        banner(`${L.boss} prepara ${L.move}: ¡muévete de lado!`, 1500);
+      }
+    }
+    B.pos.addScaledVector(B.knock, dt); B.knock.multiplyScalar(Math.exp(-5 * dt));
+    clampArena(B);
+  }
+  pose(B, P.pos, bMoving, dt);
+
+  /* Aliados */
+  for (const a of allies) a.cd = Math.max(0, a.cd - dt);
+  allyFx = allyFx.filter(x => {
+    x.t += dt;
+    x.f.g.scale.setScalar(Math.min(1, x.t / 0.25));
+    const o = { f:x.f, pos:x.pos, beamPose:x.t > 0.4, auraOn:true, auraColor:x.a.color };
+    pose(o, B.pos, false, dt);
+    if (x.t > 0.6 && !x.fired && !B.dead) {
+      x.fired = true;
+      makeBeam({ color:x.a.color, w:0.65, target:'boss', dps:50, life:1.0, grow:100,
+        from:() => x.pos.clone().add(new V(0, 1.4, 0)).addScaledVector(P.fwd, 0.8), to:() => chest(B) });
+    }
+    if (x.t > 2.1) { spark(x.pos.clone().add(new V(0, 1.2, 0)), x.a.color, 1.8, 0.3); removeFighter(x.f); return false; }
+    return true;
+  });
+
+  /* Proyectiles */
+  projectiles = projectiles.filter(p => {
+    p.life -= dt;
+    const tgt = p.target === 'boss' ? B : P;
+    if (p.target === 'boss') { const want = chest(B).sub(p.mesh.position).normalize().multiplyScalar(p.vel.length()); p.vel.lerp(want, Math.min(1, dt * 1.5)); }
+    p.mesh.position.addScaledVector(p.vel, dt);
+    if (p.mesh.position.distanceTo(chest(tgt)) < 1.2) {
+      spark(p.mesh.position, p.color, 1.1);
+      if (p.target === 'boss') hurtBoss(p.dmg, p.vel.clone().setY(0).normalize().multiplyScalar(3)); else hurtPlayer(p.dmg, p.vel.clone().setY(0).normalize().multiplyScalar(5));
+      scene.remove(p.mesh); return false;
+    }
+    if (p.life <= 0 || p.mesh.position.y < 0) { spark(p.mesh.position, p.color, 0.8); scene.remove(p.mesh); return false; }
+    return true;
+  });
+
+  /* Rayos */
+  beams = beams.filter(b => {
+    b.age += dt;
+    const from = b.from();
+    let dir, maxLen;
+    if (b.to) { const to = b.to(); dir = to.clone().sub(from); maxLen = dir.length() + 0.5; dir.normalize(); } else { dir = b.dir(); maxLen = b.maxLen; }
+    b.len = Math.min(maxLen, b.len + b.grow * dt);
+    const fade = Math.min(1, (b.life - b.age) / 0.2);
+    b.mesh.position.copy(from); b.mesh.quaternion.setFromUnitVectors(UP, dir);
+    for (const p of b.parts) { p.scale.y = b.len; p.position.y = b.len / 2; }
+    b.tip.position.y = b.len;
+    const w = Math.max(0.01, fade); b.mesh.scale.set(w, 1, w);
+    const tgt = b.target === 'boss' ? B : P;
+    if (segDist(chest(tgt), from, dir, b.len) < b.w + 0.9) {
+      if (b.target === 'boss') { hurtBoss(b.dps * dt); if (Math.random() < 0.3) spark(chest(B), b.color, 1.2, 0.2); }
+      else hurtPlayer(b.dps * dt, dir.clone().setY(0).multiplyScalar(40 * dt));
+    }
+    if (b.age >= b.life) { scene.remove(b.mesh); return false; }
+    return true;
+  });
+
+  /* Efectos */
+  effects = effects.filter(e => {
+    e.t += dt; const k = e.t / e.life;
+    e.mesh.scale.setScalar(0.2 + e.size * k); e.mesh.material.opacity = 0.9 * (1 - k);
+    if (k >= 1) { scene.remove(e.mesh); return false; }
+    return true;
+  });
+
+  /* Cámara detrás de Goku mirando al jefe */
+  const camT = P.pos.clone().addScaledVector(fwd, -7.5).addScaledVector(right, 1.3).add(new V(0, 3.2, 0));
+  camT.y = Math.max(0.8, camT.y);
+  camera.position.lerp(camT, 1 - Math.exp(-6 * dt));
+  const lookT = chest(P).lerp(chest(B), 0.45);
+  camLook.lerp(lookT, 1 - Math.exp(-8 * dt));
+  G.shake = Math.max(0, G.shake - dt);
+  const sh = G.shake * 0.5;
+  camera.position.add(new V((Math.random() - .5) * sh, (Math.random() - .5) * sh, (Math.random() - .5) * sh));
+  camera.lookAt(camLook);
+
+  /* HUD */
+  $('pHp').style.width = P.hp + '%';
+  $('pKi').style.width = P.ki + '%';
+  $('bHp').style.width = (B.hp / B.max * 100) + '%';
+  $('allies').querySelectorAll('.ally').forEach((el, j) => {
+    const a = allies[j], cd = el.querySelector('.cd');
+    cd.hidden = a.cd <= 0; if (a.cd > 0) cd.textContent = Math.ceil(a.cd);
+  });
+
+  if (G.mode === 'ending') { G.endT -= dt; if (G.endT <= 0) finish(); }
+}
+
+/* ---------- Pantallas ---------- */
+const screens = ['sTitle', 'sIntro', 'sPause', 'sEnd'];
+function showOnly(id) { for (const s of screens) $(s).hidden = s !== id; if (document.activeElement) document.activeElement.blur(); }
+
+function renderLevels() {
+  $('levelList').innerHTML = LEVELS.map((l, i) => `<button class="lvl${i < progress ? ' done' : ''}" data-i="${i}" ${i > progress ? 'disabled' : ''}><span class="n">Nivel ${i + 1}</span><span class="b">${i > progress ? '???' : l.boss}</span><span class="p">${i > progress ? 'Bloqueado' : l.place}</span></button>`).join('');
+  $('levelList').querySelectorAll('.lvl').forEach(b => b.addEventListener('click', () => openIntro(+b.dataset.i)));
+}
+
+function openIntro(i) {
+  const L = LEVELS[i]; G.pending = i;
+  $('iLevel').textContent = `Nivel ${i + 1} · ${L.place}`;
+  $('iBoss').textContent = L.boss;
+  $('iText').textContent = L.intro;
+  const list = LEVELS.slice(0, i);
+  $('iAllies').innerHTML = `<span class="chip"><b>Goku</b> Kamehameha</span>` + list.map((l, j) => `<span class="chip"><kbd>${j + 1}</kbd><b>${l.boss === 'Piccolo Daimaku' ? 'Piccolo' : l.boss}</b> ${l.move}</span>`).join('');
+  $('hud').hidden = true; $('touch').hidden = true;
+  showOnly('sIntro'); G.mode = 'menu';
+}
+
+function pause(on) {
+  if (on) { G.mode = 'paused'; showOnly('sPause'); keys.clear(); }
+  else { G.mode = 'play'; showOnly(null); }
+}
+
+function finish() {
+  G.mode = 'result'; keys.clear();
+  const L = LEVELS[G.level], last = G.level === LEVELS.length - 1;
+  $('hud').hidden = true; $('touch').hidden = true;
+  if (G.won) {
+    progress = Math.max(progress, G.level + 1); saveProgress();
+    const name = L.boss === 'Piccolo Daimaku' ? 'Piccolo' : L.boss;
+    $('eTitle').textContent = last ? '¡Venciste a Majin Buu!' : `¡Venciste a ${L.boss}!`;
+    $('eText').innerHTML = last
+      ? 'Goku y su equipo salvaron el universo. Puedes volver a jugar cualquier nivel desde el menú.'
+      : `<b>${name}</b> ahora es tu amigo y se une a tu equipo. En la próxima pelea presiona <kbd>${G.level + 1}</kbd> para que lance <b>${L.move}</b>.`;
+    $('eNext').textContent = last ? 'Volver al menú' : 'Siguiente nivel';
+    $('eNext').onclick = () => last ? toTitle() : openIntro(G.level + 1);
+  } else {
+    $('eTitle').textContent = 'Goku cayó';
+    $('eText').innerHTML = `${L.boss} ganó esta vez. Consejo: mantén <kbd>E</kbd> para bloquear sus golpes y muévete de lado cuando prepare su ataque especial.`;
+    $('eNext').textContent = 'Intentar de nuevo';
+    $('eNext').onclick = () => startLevel(G.level);
+  }
+  showOnly('sEnd');
+}
+
+function toTitle() {
+  clearFx(); removeFighter(P && P.f); removeFighter(B && B.f); P = B = null;
+  $('hud').hidden = true; $('touch').hidden = true;
+  titleScene(); renderLevels(); showOnly('sTitle'); G.mode = 'title';
+}
+
+let titleF = [];
+function titleScene() {
+  for (const f of titleF) removeFighter(f);
+  buildEnv('namek');
+  const g = makeFighter('goku'), p = makeFighter('piccolo');
+  g.g.position.set(-2.2, 0, 0); g.g.rotation.y = Math.PI / 2; g.shadow.position.set(-2.2, .07, 0);
+  p.g.position.set(2.2, 0, 0); p.g.rotation.y = -Math.PI / 2; p.shadow.position.set(2.2, .07, 0);
+  titleF = [g, p];
+}
+
+$('iGo').onclick = () => { for (const f of titleF) removeFighter(f); titleF = []; startLevel(G.pending); };
+$('iBack').onclick = toTitle;
+$('eMenu').onclick = toTitle;
+$('pauseBtn').addEventListener('click', () => { if (G.mode === 'play') pause(true); });
+$('pResume').onclick = () => pause(false);
+$('pRetry').onclick = () => startLevel(G.level);
+$('pMenu').onclick = toTitle;
+
+/* ---------- Arranque ---------- */
+titleScene(); renderLevels();
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (G.mode === 'play' || G.mode === 'ending') update(dt);
+  else if (G.mode === 'title' || G.mode === 'menu') {
+    G.t += dt;
+    const a = G.t * 0.15;
+    camera.position.set(Math.sin(a) * 9, 3 + Math.sin(G.t * 0.3), Math.cos(a) * 9);
+    camera.lookAt(0, 1.4, 0);
+    titleF.forEach((f, i) => { f.g.position.y = 0.6 + Math.sin(G.t * 2 + i) * 0.25; f.aura.material.opacity = 0.18; f.aura.material.color.setHex(i ? 0xfff27a : 0xffe066); });
+  }
+  pressed.clear();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(frame);
+})();
+</script>
