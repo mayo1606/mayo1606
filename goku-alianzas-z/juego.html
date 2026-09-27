@@ -216,9 +216,6 @@ function saveProgress() { try { localStorage.setItem('gaz-progress', String(prog
 
 /* ---------- Motor ---------- */
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
-renderer.outputEncoding = THREE.sRGBEncoding;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
 const PR_MAX = Math.min(window.devicePixelRatio || 1, 1.5);
 let pixelRatio = PR_MAX; renderer.setPixelRatio(pixelRatio);
 $('game').appendChild(renderer.domElement);
