@@ -48,6 +48,13 @@ kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border
 .note{font-size:15px;color:var(--muted);line-height:1.5;margin:0;max-width:62ch}
 .note b{color:var(--ink)}
 
+/* Efectos de cómic */
+#speed{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:0;background:repeating-conic-gradient(from var(--a,0deg) at 50% 50%,transparent 0deg 3.2deg,rgba(255,255,255,.75) 3.2deg 3.6deg);-webkit-mask:radial-gradient(circle at 50% 50%,transparent 38%,#000 78%);mask:radial-gradient(circle at 50% 50%,transparent 38%,#000 78%)}
+#fx{position:fixed;inset:0;pointer-events:none;z-index:6;overflow:hidden}
+.pow{position:absolute;transform:translate(-50%,-50%) rotate(var(--r,0deg));font-family:'Bangers','Impact',sans-serif;font-size:clamp(30px,5vw,54px);letter-spacing:.03em;color:#ffe14d;-webkit-text-stroke:2px #14102a;paint-order:stroke fill;text-shadow:3px 3px 0 #ff4d5e,5px 5px 0 #14102a;animation:pow .65s ease-out forwards;white-space:nowrap}
+@keyframes pow{0%{transform:translate(-50%,-50%) rotate(var(--r)) scale(.3)}18%{transform:translate(-50%,-50%) rotate(var(--r)) scale(1.25)}30%{transform:translate(-50%,-50%) rotate(var(--r)) scale(1)}100%{transform:translate(-50%,-90%) rotate(var(--r)) scale(1);opacity:0}}
+@media (prefers-reduced-motion:reduce){.pow{animation-duration:.01s}#speed{display:none}}
+
 /* HUD */
 #hud{position:fixed;inset:0;pointer-events:none;z-index:10}
 .bars{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));width:min(40vw,340px);display:flex;flex-direction:column;gap:5px}
@@ -84,6 +91,8 @@ kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border
 </style>
 
 <div id="game"></div>
+<div id="speed"></div>
+<div id="fx"></div>
 
 <div id="hud" hidden>
   <div class="bars left">
@@ -204,83 +213,154 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 700);
 function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
-scene.add(new THREE.HemisphereLight(0xffffff, 0x4a5566, 0.85));
-const sunLight = new THREE.DirectionalLight(0xffffff, 0.85); sunLight.position.set(30, 60, 20); scene.add(sunLight);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8890b0, 0.48));
+const sunLight = new THREE.DirectionalLight(0xffffff, 0.68); sunLight.position.set(25, 50, 35); scene.add(sunLight);
 let world = new THREE.Group(); scene.add(world);
 
-const M = (c, e) => new THREE.MeshStandardMaterial({ color:c, roughness:.75, flatShading:true, emissive:e || 0 });
+/* ---------- Estilo dibujo animado: sombreado en 3 tonos + contornos ---------- */
+const GRAD = (() => {
+  const t = new THREE.DataTexture(new Uint8Array([120, 120, 120, 200, 200, 200, 255, 255, 255]), 3, 1, THREE.RGBFormat);
+  t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return t;
+})();
+const M = (c, e) => new THREE.MeshToonMaterial({ color:c, gradientMap:GRAD, emissive:e || 0 });
 const glow = (c, o) => new THREE.MeshBasicMaterial({ color:c, transparent:true, opacity:o, blending:THREE.AdditiveBlending, depthWrite:false });
+const INK = 0x14102a;
+// Contorno de personajes: la malla se infla por su normal y se pinta de tinta por detrás
+const OL = new THREE.ShaderMaterial({
+  side:THREE.BackSide,
+  vertexShader:'void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vec3 n = normalize(normalMatrix * normal); mv.xyz += n * 0.028 * max(1.0, -mv.z * 0.06); gl_Position = projectionMatrix * mv; }',
+  fragmentShader:'void main(){ gl_FragColor = vec4(0.078, 0.063, 0.165, 1.0); }',
+});
+// Contorno de escenario: copia un poco más grande, con niebla
+const OL_WORLD = new THREE.MeshBasicMaterial({ color:INK, side:THREE.BackSide });
+function outlineWorld(root, w) {
+  const list = [];
+  root.traverse(o => { if (o.isMesh && !o.userData.noOL && o.material && o.material.isMeshToonMaterial) list.push(o); });
+  for (const o of list) {
+    o.geometry.computeBoundingBox();
+    const s = new V(); o.geometry.boundingBox.getSize(s);
+    const h = new THREE.Mesh(o.geometry, OL_WORLD);
+    h.scale.set(1 + 2 * w / Math.max(s.x, 0.01), 1 + 2 * w / Math.max(s.y, 0.01), 1 + 2 * w / Math.max(s.z, 0.01));
+    o.add(h);
+  }
+}
 
-/* ---------- Personajes hechos con piezas ---------- */
+/* ---------- Personajes ---------- */
 const LOOKS = {
-  goku:    { skin:0xffd3a8, torso:0xff7a1a, legs:0xff7a1a, arms:'skin', belt:0x2b5cff, boots:0x2b5cff, wrist:0x2b5cff, hair:'goku', hairC:0x111111 },
-  piccolo: { skin:0x5fbf4a, torso:0x5a2d86, legs:0x5a2d86, arms:'skin', belt:0x3fa0e0, boots:0x7a4a2a, hair:'piccolo', hairC:0xf4f4f4, cape:0xf2f2f2 },
-  vegeta:  { skin:0xffd3a8, torso:0x2442a8, legs:0x2442a8, arms:0x2442a8, armor:0xf5f5f5, belt:0x2442a8, boots:0xf5f5f5, hair:'vegeta', hairC:0x111111 },
-  freezer: { skin:0xf1f0f6, torso:0xf1f0f6, legs:0xf1f0f6, arms:'skin', belt:0xf1f0f6, boots:0xf1f0f6, hair:'freezer', hairC:0x8a3cc8, tail:true },
-  cell:    { skin:0xe8dcc8, torso:0x7fcf5a, legs:0x7fcf5a, arms:0x7fcf5a, belt:0x222222, boots:0x222222, hair:'cell', hairC:0x2a2a2a, spots:true, tail:true, wings:true },
-  buu:     { skin:0xff9ecb, torso:0x222222, legs:0xffffff, arms:'skin', belt:0xffd23f, boots:0xffd23f, hair:'buu', hairC:0xff9ecb, fat:true, cape:0x7a3cc8 },
+  goku:    { skin:0xffd6ad, torso:0xff7a1a, legs:0xff7a1a, arms:'skin', belt:0x2b5cff, boots:0x2b5cff, wrist:0x2b5cff, neck:0x2b5cff, hair:'goku', hairC:0x16131f, brow:0x16131f },
+  piccolo: { skin:0x6ccf52, torso:0x5a2d86, legs:0x5a2d86, arms:'skin', belt:0x3fa0e0, boots:0x7a4a2a, hair:'piccolo', hairC:0xf4f4f4, cape:0xf2f2f2, alien:true, brow:0x3f8a33 },
+  vegeta:  { skin:0xffd6ad, torso:0x2442a8, legs:0x2442a8, arms:0x2442a8, glove:0xf5f5f5, armor:0xf5f5f5, belt:0x2442a8, boots:0xf5f5f5, hair:'vegeta', hairC:0x16131f, brow:0x16131f },
+  freezer: { skin:0xf3f1f8, torso:0xf3f1f8, legs:0xf3f1f8, arms:'skin', belt:0xf3f1f8, boots:0xf3f1f8, hair:'freezer', hairC:0x8a3cc8, tail:true, alien:true, eye:0xb0002a, brow:0xb9b4c8, shoulders:0x8a3cc8 },
+  cell:    { skin:0xefe2cc, torso:0x86d45e, legs:0x86d45e, arms:0x86d45e, glove:0x86d45e, belt:0x222222, boots:0x222222, hair:'cell', hairC:0x1e1e1e, spots:true, tail:true, wings:true, alien:true, eye:0xb0002a, brow:0x7a6a55 },
+  buu:     { skin:0xff9ecb, torso:0x222222, legs:0xffffff, arms:'skin', belt:0xffd23f, boots:0xffd23f, wrist:0xffd23f, hair:'buu', hairC:0xff9ecb, fat:true, cape:0x7a3cc8, alien:true, eye:0x111111, brow:0xd76fa0 },
 };
+
+const S = r => new THREE.SphereGeometry(r, 20, 14);
+const CY = (a, b, h) => new THREE.CylinderGeometry(a, b, h, 16);
+const CO = (r, h) => new THREE.ConeGeometry(r, h, 10);
+const BX = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+const CAP = r => new THREE.SphereGeometry(r, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2);
 
 function makeFighter(key) {
   const L = LOOKS[key], g = new THREE.Group(), mats = [];
-  const add = (geo, color, x, y, z, parent) => { const m = M(color); mats.push(m); const mesh = new THREE.Mesh(geo, m); mesh.position.set(x, y, z); (parent || g).add(mesh); return mesh; };
-  const B = (w, h, d) => new THREE.BoxGeometry(w, h, d);
-  const tw = L.fat ? 1.2 : 0.8, td = L.fat ? 0.8 : 0.45;
+  const add = (geo, color, x, y, z, parent, ol) => {
+    const m = M(color); mats.push(m);
+    const mesh = new THREE.Mesh(geo, m); mesh.position.set(x, y, z);
+    if (ol !== false) mesh.add(new THREE.Mesh(geo, OL));
+    (parent || g).add(mesh); return mesh;
+  };
+  const flatPart = (geo, color, x, y, z, parent) => { const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color })); mesh.position.set(x, y, z); parent.add(mesh); return mesh; };
+  const fat = !!L.fat, tw = fat ? 0.6 : 0.42;
+  const armC = L.arms === 'skin' ? L.skin : L.arms;
+
+  // Piernas (pantalón ancho estilo gi + botas)
   const legs = [];
   for (const s of [-1, 1]) {
-    const leg = new THREE.Group(); leg.position.set(s * 0.21, 0.95, 0); g.add(leg);
-    add(B(0.3, 0.75, 0.32), L.legs, 0, -0.4, 0, leg);
-    add(B(0.34, 0.25, 0.42), L.boots, 0, -0.82, 0.04, leg);
+    const leg = new THREE.Group(); leg.position.set(s * (fat ? 0.26 : 0.19), 1.0, 0); g.add(leg);
+    add(S(1), L.legs, 0, -0.36, 0, leg).scale.set(fat ? 0.26 : 0.19, 0.42, fat ? 0.26 : 0.2);
+    add(CY(0.13, 0.15, 0.32), L.boots, 0, -0.8, 0.01, leg);
+    add(S(0.15), L.boots, 0, -0.92, 0.09, leg).scale.set(1, 0.55, 1.35);
     legs.push(leg);
   }
-  add(B(tw, 0.8, td), L.torso, 0, 1.38, 0);
-  add(B(tw + 0.02, 0.14, td + 0.02), L.belt, 0, 1.0, 0);
-  if (L.armor) { add(B(tw + 0.08, 0.46, td + 0.1), L.armor, 0, 1.55, 0); add(B(0.3, 0.12, 0.5), L.armor, -0.5, 1.8, 0); add(B(0.3, 0.12, 0.5), L.armor, 0.5, 1.8, 0); }
-  if (L.fat) add(new THREE.SphereGeometry(0.62, 12, 10), L.skin, 0, 1.25, 0.12);
-  if (L.spots) for (const [x, y] of [[-0.2, 1.5], [0.18, 1.3], [0.05, 1.62], [-0.1, 1.18]]) add(B(0.1, 0.1, 0.02), 0x1f2a18, x, y, td / 2 + 0.01);
-  if (L.cape) { add(B(tw + 0.3, 1.5, 0.06), L.cape, 0, 1.1, -td / 2 - 0.08); if (key === 'piccolo') { add(B(0.36, 0.2, 0.5), L.cape, -0.52, 1.82, 0); add(B(0.36, 0.2, 0.5), L.cape, 0.52, 1.82, 0); } }
-  if (L.tail) { const t = add(new THREE.CylinderGeometry(0.06, 0.14, 1.3, 6), L.torso, 0, 0.75, -0.7); t.rotation.x = -1.1; }
-  if (L.wings) for (const s of [-1, 1]) { const w = add(B(0.06, 0.9, 0.5), 0x1d1d1d, s * 0.28, 1.5, -0.45); w.rotation.z = s * 0.35; }
+  // Cuerpo
+  add(CY(tw * 0.92, tw * 0.92, 0.15), L.belt, 0, 1.02, 0).scale.z = fat ? 0.95 : 0.72;
+  add(S(1), L.torso, 0, 1.42, 0).scale.set(tw, 0.5, fat ? 0.55 : 0.3);
+  if (fat) add(S(0.5), L.skin, 0, 1.3, 0.2).scale.set(1, 0.9, 0.7);
+  if (L.neck) add(S(0.16), L.neck, 0, 1.8, 0.08, g, false).scale.set(1, 0.6, 1);
+  add(CY(0.11, 0.13, 0.22), L.skin, 0, 1.9, 0);
+  if (L.armor) { add(S(1), L.armor, 0, 1.55, 0.02).scale.set(tw + 0.05, 0.36, 0.34); for (const s of [-1, 1]) add(S(0.17), L.armor, s * 0.42, 1.8, 0).scale.set(1.2, 0.6, 1.1); }
+  if (L.shoulders) for (const s of [-1, 1]) add(S(0.17), L.shoulders, s * 0.46, 1.78, 0).scale.set(1, 0.8, 1);
+  if (L.spots) for (const [x, y] of [[-0.18, 1.52], [0.16, 1.34], [0.04, 1.66], [-0.1, 1.2], [0.24, 1.58]]) flatPart(S(0.045), 0x1f2a18, x, y, 0.29, g).scale.z = 0.3;
+  if (L.cape) {
+    add(BX(tw * 2 + 0.25, 1.45, 0.05), L.cape, 0, 1.12, fat ? -0.58 : -0.36).rotation.x = 0.08;
+    if (key === 'piccolo') for (const s of [-1, 1]) add(S(0.22), L.cape, s * 0.46, 1.82, -0.02).scale.set(1.1, 0.6, 1.1);
+  }
+  if (L.tail) { const t = add(CY(0.05, 0.13, 1.3), L.torso, 0, 0.78, -0.62); t.rotation.x = -1.05; }
+  if (L.wings) for (const s of [-1, 1]) { const w = add(S(1), 0x1d1d1d, s * 0.3, 1.55, -0.38); w.scale.set(0.06, 0.5, 0.26); w.rotation.z = s * 0.35; }
+
+  // Brazos
   const arms = [];
-  const armC = L.arms === 'skin' ? L.skin : L.arms;
   for (const s of [-1, 1]) {
-    const arm = new THREE.Group(); arm.position.set(s * (tw / 2 + 0.13), 1.7, 0); g.add(arm);
-    add(B(0.22, 0.7, 0.22), armC, 0, -0.35, 0, arm);
-    add(B(0.25, 0.2, 0.25), L.wrist || (L.arms === 'skin' ? L.skin : 0xf5f5f5), 0, -0.62, 0, arm);
+    const arm = new THREE.Group(); arm.position.set(s * (tw + 0.08), 1.74, 0); g.add(arm);
+    add(S(0.14), armC, 0, 0, 0, arm);
+    add(CY(0.1, 0.09, 0.42), armC, 0, -0.24, 0, arm);
+    add(CY(0.09, 0.11, 0.32), L.glove && L.arms !== 'skin' ? armC : L.skin, 0, -0.55, 0, arm);
+    if (L.wrist) add(CY(0.125, 0.125, 0.14), L.wrist, 0, -0.66, 0, arm);
+    add(S(0.14), L.glove || L.skin, 0, -0.8, 0, arm);
     arms.push(arm);
   }
-  const head = new THREE.Group(); head.position.set(0, 2.06, 0); g.add(head);
-  add(new THREE.SphereGeometry(0.3, 12, 10), L.skin, 0, 0, 0, head);
-  add(B(0.07, 0.09, 0.03), 0x111111, -0.1, 0.03, 0.28, head);
-  add(B(0.07, 0.09, 0.03), 0x111111, 0.1, 0.03, 0.28, head);
-  const cap = r => new THREE.SphereGeometry(r, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-  const cone = (r, h) => new THREE.ConeGeometry(r, h, 5);
+
+  // Cabeza grande estilo anime
+  const head = new THREE.Group(); head.position.set(0, 2.22, 0); g.add(head);
+  add(S(0.4), L.skin, 0, 0, 0, head).scale.set(1, 1.05, 0.98);
+  if (!L.alien) for (const s of [-1, 1]) add(S(0.08), L.skin, s * 0.39, -0.02, 0, head).scale.set(0.6, 1, 0.8);
+  for (const s of [-1, 1]) {
+    const ew = flatPart(S(1), 0xffffff, s * 0.15, 0.0, 0.33, head); ew.scale.set(0.11, 0.12, 0.06); ew.rotation.y = s * 0.3;
+    const pu = flatPart(S(1), L.eye || 0x16131f, s * 0.14, -0.005, 0.38, head); pu.scale.set(0.045, 0.075, 0.03);
+    const hl = flatPart(S(1), 0xffffff, s * 0.13 + 0.02, 0.03, 0.405, head); hl.scale.set(0.015, 0.02, 0.01);
+    const br = flatPart(BX(0.17, 0.035, 0.03), L.brow || 0x16131f, s * 0.15, 0.15, 0.36, head); br.rotation.z = s * 0.32; br.rotation.y = s * 0.3;
+  }
+  flatPart(BX(0.12, 0.022, 0.02), 0x5a2a2a, 0, -0.21, 0.37, head);
+
+  const spike = (dir, r, h, origin, color) => {
+    const d = new V(...dir).normalize();
+    const o = origin ? new V(...origin) : d.clone().multiplyScalar(0.3);
+    const c = add(CO(r, h), color || L.hairC, 0, 0, 0, head);
+    c.position.copy(o.addScaledVector(d, h * 0.42)); c.quaternion.setFromUnitVectors(UP, d);
+    return c;
+  };
   if (L.hair === 'goku') {
-    add(cap(0.315), L.hairC, 0, 0.03, -0.02, head);
-    const spikes = [[0,.28,-.05,0,0],[.2,.2,0,0,-.9],[-.2,.2,0,0,.9],[.12,.16,-.2,-.6,-.4],[-.12,.16,-.2,-.6,.4],[0,.1,-.28,-1.2,0],[.26,.05,-.1,-.3,-1.4],[-.26,.05,-.1,-.3,1.4],[.09,.3,.12,.45,-.3],[-.09,.3,.12,.45,.3]];
-    for (const [x, y, z, rx, rz] of spikes) { const c = add(cone(0.12, 0.5), L.hairC, x, y, z, head); c.rotation.set(rx, 0, rz); }
+    add(CAP(0.43), L.hairC, 0, 0.02, -0.03, head).rotation.x = -0.35;
+    for (const d of [[0,1,-.25],[.55,.8,-.3],[-.55,.8,-.3],[.9,.35,-.3],[-.9,.35,-.3],[.45,.3,-.9],[-.45,.3,-.9],[0,.55,-.85],[.95,-.15,-.35],[-.95,-.15,-.35],[0,.05,-1]]) spike(d, 0.17, 0.72);
+    spike([.35, -.5, .8], 0.1, 0.4, [.14, .3, .26]); spike([-.35, -.5, .8], 0.1, 0.4, [-.14, .3, .26]); spike([0, -.3, .95], 0.1, 0.36, [0, .34, .26]);
   } else if (L.hair === 'vegeta') {
-    add(cap(0.315), L.hairC, 0, 0.03, -0.02, head);
-    const spikes = [[0,.45,-.05,-.15,0],[.13,.42,-.05,-.1,-.25],[-.13,.42,-.05,-.1,.25],[.22,.32,-.05,0,-.5],[-.22,.32,-.05,0,.5],[0,.4,-.18,-.35,0]];
-    for (const [x, y, z, rx, rz] of spikes) { const c = add(cone(0.12, 0.75), L.hairC, x, y, z, head); c.rotation.set(rx, 0, rz); }
+    add(CAP(0.43), L.hairC, 0, 0.02, -0.03, head).rotation.x = -0.5;
+    for (const d of [[0,1,-.1],[.3,1,-.15],[-.3,1,-.15],[.6,.85,-.2],[-.6,.85,-.2],[.15,1,-.45],[-.15,1,-.45],[0,.8,-.6],[.4,.7,-.5],[-.4,.7,-.5]]) spike(d, 0.19, 0.95);
   } else if (L.hair === 'piccolo') {
-    const t = add(cap(0.34), L.hairC, 0, 0.04, -0.02, head); t.scale.set(1, 1.25, 1);
-    add(B(0.62, 0.08, 0.62), 0x5a2d86, 0, 0.08, -0.02, head);
+    add(CAP(0.44), L.hairC, 0, 0.03, -0.02, head).scale.set(1, 1.45, 1);
+    const band = add(new THREE.TorusGeometry(0.43, 0.055, 8, 28), 0x5a2d86, 0, 0.07, -0.02, head); band.rotation.x = Math.PI / 2;
     for (const s of [-1, 1]) {
-      const a = add(new THREE.CylinderGeometry(0.02, 0.025, 0.42, 5), L.skin, s * 0.1, 0.34, 0.22, head); a.rotation.x = 0.5;
-      const e = add(cone(0.06, 0.26), L.skin, s * 0.32, 0.05, 0, head); e.rotation.z = -s * 1.3;
+      const a = add(CY(0.018, 0.028, 0.45), L.skin, s * 0.1, 0.42, 0.26, head); a.rotation.x = 0.55; a.rotation.z = -s * 0.15;
+      spike([s, 0.6, -0.1], 0.07, 0.36, [s * 0.36, 0, 0], L.skin);
     }
   } else if (L.hair === 'freezer') {
-    const d = add(cap(0.33), L.hairC, 0, 0.05, -0.02, head); d.scale.set(1, 1.15, 1.15);
+    const d = add(CAP(0.44), L.hairC, 0, 0.04, -0.05, head); d.scale.set(1.02, 1.25, 1.15); d.rotation.x = -0.3;
   } else if (L.hair === 'cell') {
-    for (const s of [-1, 1]) { const c = add(cone(0.1, 0.6), L.hairC, s * 0.2, 0.34, -0.05, head); c.rotation.z = -s * 0.25; }
-    add(cap(0.31), 0x7fcf5a, 0, 0.03, -0.03, head);
+    add(CAP(0.42), 0x86d45e, 0, 0.03, -0.04, head).rotation.x = -0.3;
+    for (const s of [-1, 1]) spike([s * 0.45, 1, -0.2], 0.11, 0.75, [s * 0.28, 0.25, -0.05]);
   } else if (L.hair === 'buu') {
-    const a = add(new THREE.CylinderGeometry(0.05, 0.11, 0.6, 7), L.skin, 0, 0.36, -0.14, head); a.rotation.x = -0.75;
+    const a = add(CY(0.06, 0.12, 0.6), L.skin, 0, 0.5, -0.2, head); a.rotation.x = -0.8;
+    add(S(0.08), L.skin, 0, 0.7, -0.42, head);
   }
-  const aura = new THREE.Mesh(new THREE.SphereGeometry(1.3, 16, 12), glow(0xffe066, 0));
-  aura.scale.set(1, 1.55, 1); aura.position.y = 1.2; g.add(aura);
-  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.75, 20), new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:.35, depthWrite:false }));
+
+  // Aura tipo llamarada
+  const auraMat = glow(0xffe066, 0);
+  const aura = new THREE.Group(); aura.position.y = 1.25; g.add(aura);
+  const core = new THREE.Mesh(S(1), auraMat); core.scale.set(1.15, 1.6, 1.15); aura.add(core);
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2, f = new THREE.Mesh(CO(0.35, 1.8), auraMat); f.position.set(Math.cos(a) * 0.8, 1.2, Math.sin(a) * 0.8); f.rotation.set(Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3); aura.add(f); }
+  aura.material = auraMat;
+
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color:INK, transparent:true, opacity:.35, depthWrite:false }));
   shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
   scene.add(g);
   return { g, mats, arms, legs, head, aura, shadow, flash:0, punchT:0 };
@@ -290,62 +370,76 @@ function removeFighter(f) { if (!f) return; scene.remove(f.g); scene.remove(f.sh
 /* ---------- Escenarios ---------- */
 function rng(seed) { return () => (seed = (seed * 16807) % 2147483647, (seed - 1) / 2147483646); }
 const ENVS = {
-  namek:   { sky:0x8fe3c9, fog:0xa8ecd6, ground:0x6fbf55 },
-  tierra:  { sky:0x86b8f0, fog:0xb5d2f2, ground:0xcaa06a },
-  ruinas:  { sky:0xc8603a, fog:0xd07a4f, ground:0x55603f },
-  arena:   { sky:0x8ec6f5, fog:0xb8daf7, ground:0x6fb35a },
-  sagrado: { sky:0x4d3a8f, fog:0x6c58ad, ground:0x7cc06a },
+  namek:   { top:0x2fb9a0, horizon:0xc8f5dc, ground:0x74c054, patch:0x62ad47, cloud:0xffffff },
+  tierra:  { top:0x3f8fe8, horizon:0xd5ecff, ground:0xe0b476, patch:0xcfa065, cloud:0xffffff },
+  ruinas:  { top:0x7a1f2a, horizon:0xff9a52, ground:0x6a6a45, patch:0x5a5a38, cloud:0x5d4a55 },
+  arena:   { top:0x3a8ff0, horizon:0xd8efff, ground:0x86c95e, patch:0x77ba50, cloud:0xffffff },
+  sagrado: { top:0x1c1454, horizon:0x9a7ad6, ground:0x8fd070, patch:0x7cc062, cloud:null },
 };
 function buildEnv(type) {
   scene.remove(world); world = new THREE.Group(); scene.add(world);
   const E = ENVS[type], r = rng(type.length * 97 + 13);
-  scene.background = new THREE.Color(E.sky);
-  scene.fog = new THREE.Fog(E.fog, 70, 230);
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(260, 48), M(E.ground)); ground.rotation.x = -Math.PI / 2; world.add(ground);
+  scene.background = new THREE.Color(E.horizon);
+  scene.fog = new THREE.Fog(E.horizon, 80, 250);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(420, 24, 16), new THREE.ShaderMaterial({
+    side:THREE.BackSide, depthWrite:false,
+    uniforms:{ a:{ value:new THREE.Color(E.top) }, b:{ value:new THREE.Color(E.horizon) } },
+    vertexShader:'varying float h; void main(){ h = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader:'uniform vec3 a; uniform vec3 b; varying float h; void main(){ float k = smoothstep(0.0, 0.55, h); k = floor(k * 6.0) / 6.0; gl_FragColor = vec4(mix(b, a, k), 1.0); }',
+  }));
+  sky.userData.noOL = true; world.add(sky);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(270, 64), M(E.ground)); ground.rotation.x = -Math.PI / 2; ground.userData.noOL = true; world.add(ground);
   const put = (mesh, x, y, z) => { mesh.position.set(x, y, z); world.add(mesh); return mesh; };
   const around = (min, max) => { const a = r() * Math.PI * 2, d = min + r() * (max - min); return [Math.cos(a) * d, Math.sin(a) * d]; };
-  const flat = (rad, mat, x, z, y) => { const m = new THREE.Mesh(new THREE.CircleGeometry(rad, 28), mat); m.rotation.x = -Math.PI / 2; return put(m, x, y || 0.03, z); };
-  // Borde del área de pelea
-  const ring = new THREE.Mesh(new THREE.RingGeometry(69, 70, 64), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:.25 })); ring.rotation.x = -Math.PI / 2; put(ring, 0, 0.05, 0);
+  const flat = (rad, mat, x, z, y) => { const m = new THREE.Mesh(new THREE.CircleGeometry(rad, 32), mat); m.rotation.x = -Math.PI / 2; m.userData.noOL = true; return put(m, x, y || 0.03, z); };
+  for (let i = 0; i < 26; i++) { const [x, z] = around(4, 140); const p = flat(3 + r() * 8, M(E.patch), x, z, 0.015); p.scale.set(1, 0.6 + r() * 0.6, 1); }
+  const ring = new THREE.Mesh(new THREE.RingGeometry(69, 70, 64), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:.3 })); ring.rotation.x = -Math.PI / 2; ring.userData.noOL = true; put(ring, 0, 0.05, 0);
+  // Nubes de dibujo animado
+  if (E.cloud !== null) for (let i = 0; i < 16; i++) {
+    const [x, z] = around(90, 230), c = new THREE.Group(), n = 3 + Math.floor(r() * 3), sz = 5 + r() * 5;
+    for (let k = 0; k < n; k++) { const b = new THREE.Mesh(S(sz * (0.7 + r() * 0.5)), M(E.cloud)); b.position.set((k - n / 2) * sz * 0.9, r() * sz * 0.4, r() * sz * 0.5); b.scale.y = 0.7; c.add(b); }
+    put(c, x, 55 + r() * 45, z);
+  }
 
   if (type === 'namek') {
-    for (let i = 0; i < 7; i++) { const [x, z] = around(20, 120); flat(6 + r() * 12, M(0x3fb8a8), x, z); }
+    for (let i = 0; i < 7; i++) { const [x, z] = around(20, 120); flat(6 + r() * 12, M(0x46d1c0), x, z); }
     for (let i = 0; i < 45; i++) {
       const [x, z] = around(22, 140), h = 4 + r() * 5;
-      put(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, h, 6), M(0x8a6a3a)), x, h / 2, z);
-      put(new THREE.Mesh(new THREE.SphereGeometry(1.6 + r(), 8, 6), M(0x2f9f8a)), x, h + 0.8, z);
+      put(new THREE.Mesh(CY(0.22, 0.32, h), M(0x9a7a45)), x, h / 2, z);
+      put(new THREE.Mesh(S(1.6 + r()), M(0x33b69c)), x, h + 0.8, z);
     }
     for (let i = 0; i < 7; i++) {
       const [x, z] = around(30, 110), s = 2.5 + r() * 2;
-      put(new THREE.Mesh(new THREE.SphereGeometry(s, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), M(0xf2f7ee)), x, 0, z);
-      put(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.2, 10), M(0x2d6b64)), x, s * 0.55, z + s * 0.83).rotation.x = Math.PI / 2;
+      put(new THREE.Mesh(CAP(s), M(0xf5faef)), x, 0, z);
+      const w = put(new THREE.Mesh(CY(0.5, 0.5, 0.2), M(0x2d6b64)), x, s * 0.55, z + s * 0.83); w.rotation.x = Math.PI / 2;
     }
-    for (let i = 0; i < 14; i++) { const [x, z] = around(90, 200), h = 15 + r() * 30; put(new THREE.Mesh(new THREE.CylinderGeometry(4 + r() * 5, 7 + r() * 6, h, 7), M(0x7fb07a)), x, h / 2, z); }
+    for (let i = 0; i < 14; i++) { const [x, z] = around(90, 200), h = 15 + r() * 30; put(new THREE.Mesh(new THREE.CylinderGeometry(4 + r() * 5, 7 + r() * 6, h, 10), M(0x8fc58a)), x, h / 2, z); }
     // Namekusei tiene tres soles
-    for (let i = 0; i < 3; i++) { const s = new THREE.Mesh(new THREE.SphereGeometry(7, 16, 12), new THREE.MeshBasicMaterial({ color:0xfffbe0, fog:false })); put(s, -120 + i * 40, 90 + i * 12, -260); }
+    for (let i = 0; i < 3; i++) { const s = new THREE.Mesh(S(7), new THREE.MeshBasicMaterial({ color:0xfffbe0, fog:false })); put(s, -120 + i * 40, 90 + i * 12, -300); }
   } else if (type === 'tierra') {
-    for (let i = 0; i < 30; i++) { const [x, z] = around(35, 170), h = 6 + r() * 22, rad = 3 + r() * 6; put(new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 1.25, h, 8), M(0xa8744a)), x, h / 2, z); }
-    for (let i = 0; i < 40; i++) { const [x, z] = around(15, 120); put(new THREE.Mesh(new THREE.DodecahedronGeometry(0.6 + r() * 1.4), M(0x9a7550)), x, 0.4, z); }
+    for (let i = 0; i < 30; i++) { const [x, z] = around(35, 170), h = 6 + r() * 22, rad = 3 + r() * 6; put(new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 1.25, h, 10), M(0xc4834e)), x, h / 2, z); }
+    for (let i = 0; i < 40; i++) { const [x, z] = around(15, 120); put(new THREE.Mesh(new THREE.DodecahedronGeometry(0.6 + r() * 1.4), M(0xb08558)), x, 0.4, z); }
   } else if (type === 'ruinas') {
-    for (let i = 0; i < 10; i++) { const [x, z] = around(18, 120); flat(4 + r() * 10, new THREE.MeshBasicMaterial({ color:0xff6a1a }), x, z); }
-    for (let i = 0; i < 35; i++) { const [x, z] = around(20, 150), s = 2 + r() * 6; const b = put(new THREE.Mesh(new THREE.BoxGeometry(s, s * 1.5, s), M(0x4a4136)), x, s * 0.5, z); b.rotation.set(r() * .8, r() * 3, r() * .8); }
-    for (let i = 0; i < 12; i++) { const [x, z] = around(25, 110), h = 3 + r() * 3; put(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.25, h, 5), M(0x3b2f24)), x, h / 2, z); }
+    for (let i = 0; i < 10; i++) { const [x, z] = around(18, 120); flat(4 + r() * 10, new THREE.MeshBasicMaterial({ color:0xff7a1f }), x, z); }
+    for (let i = 0; i < 35; i++) { const [x, z] = around(20, 150), s = 2 + r() * 6; const b = put(new THREE.Mesh(new THREE.DodecahedronGeometry(s * 0.7), M(0x57493c)), x, s * 0.4, z); b.scale.y = 1.5; b.rotation.set(r() * .5, r() * 3, r() * .5); }
+    for (let i = 0; i < 12; i++) { const [x, z] = around(25, 110), h = 3 + r() * 3; put(new THREE.Mesh(CY(0.15, 0.25, h), M(0x3b2f24)), x, h / 2, z); }
   } else if (type === 'arena') {
-    const plat = put(new THREE.Mesh(new THREE.PlaneGeometry(40, 40), M(0xe6e2d6)), 0, 0.04, 0); plat.rotation.x = -Math.PI / 2;
-    const grid = new THREE.GridHelper(40, 10, 0xb9b3a0, 0xb9b3a0); grid.position.y = 0.06; world.add(grid);
-    for (const [x, z] of [[-20, -20], [20, -20], [-20, 20], [20, 20]]) put(new THREE.Mesh(new THREE.BoxGeometry(1.2, 4, 1.2), M(0xdad5c4)), x, 2, z);
-    for (let i = 0; i < 18; i++) { const [x, z] = around(110, 210), h = 20 + r() * 40; put(new THREE.Mesh(new THREE.ConeGeometry(10 + r() * 12, h, 6), M(0x5b8f5a)), x, h / 2, z); }
+    const plat = put(new THREE.Mesh(BX(40, 0.3, 40), M(0xefeadc)), 0, -0.1, 0); plat.userData.noOL = true;
+    const grid = new THREE.GridHelper(40, 10, 0x9c957e, 0x9c957e); grid.position.y = 0.06; world.add(grid);
+    for (const [x, z] of [[-20, -20], [20, -20], [-20, 20], [20, 20]]) put(new THREE.Mesh(BX(1.2, 4, 1.2), M(0xe2dcc8)), x, 2, z);
+    for (let i = 0; i < 18; i++) { const [x, z] = around(110, 210), h = 20 + r() * 40; put(new THREE.Mesh(CO(10 + r() * 12, h), M(0x66a862)), x, h / 2, z); }
   } else if (type === 'sagrado') {
     for (let i = 0; i < 40; i++) {
       const [x, z] = around(20, 150), s = 1 + r() * 3;
-      const c = put(new THREE.Mesh(new THREE.OctahedronGeometry(s), M(r() > .5 ? 0xb88cff : 0x7fe6ff, 0x221144)), x, s, z); c.scale.y = 2; c.rotation.y = r() * 3;
+      const c = put(new THREE.Mesh(new THREE.OctahedronGeometry(s), M(r() > .5 ? 0xc49cff : 0x8ff0ff, 0x221144)), x, s * 2, z); c.scale.y = 2; c.rotation.y = r() * 3;
     }
-    for (let i = 0; i < 10; i++) { const [x, z] = around(60, 160), s = 5 + r() * 8; put(new THREE.Mesh(new THREE.DodecahedronGeometry(s), M(0x6aa05a)), x, 25 + r() * 30, z); }
+    for (let i = 0; i < 10; i++) { const [x, z] = around(60, 160), s = 5 + r() * 8; put(new THREE.Mesh(new THREE.DodecahedronGeometry(s), M(0x7cc062)), x, 25 + r() * 30, z); }
     const stars = new THREE.BufferGeometry(), pts = [];
-    for (let i = 0; i < 500; i++) { const a = r() * Math.PI * 2, b = r() * 1.2 + 0.2, d = 300; pts.push(Math.cos(a) * Math.cos(b) * d, Math.sin(b) * d, Math.sin(a) * Math.cos(b) * d); }
+    for (let i = 0; i < 500; i++) { const a = r() * Math.PI * 2, b = r() * 1.2 + 0.2, d = 380; pts.push(Math.cos(a) * Math.cos(b) * d, Math.sin(b) * d, Math.sin(a) * Math.cos(b) * d); }
     stars.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    world.add(new THREE.Points(stars, new THREE.PointsMaterial({ color:0xffffff, size:1.5, fog:false })));
+    world.add(new THREE.Points(stars, new THREE.PointsMaterial({ color:0xffffff, size:1.6, fog:false })));
   }
+  outlineWorld(world, 0.12);
 }
 
 /* ---------- Entrada ---------- */
@@ -377,7 +471,7 @@ document.querySelectorAll('#tbtns .tb').forEach(b => {
 })();
 
 /* ---------- Estado ---------- */
-const G = { mode:'title', level:0, t:0, endT:0, shake:0, won:false };
+const G = { speed:0, mode:'title', level:0, t:0, endT:0, shake:0, won:false };
 let P = null, B = null, allies = [], projectiles = [], beams = [], allyFx = [], effects = [];
 const camLook = new V();
 
@@ -387,6 +481,7 @@ function clearFx() {
   for (const a of allyFx) removeFighter(a.f);
   for (const e of effects) scene.remove(e.mesh);
   projectiles = []; beams = []; allyFx = []; effects = [];
+  G.speed = 0; $('speed').style.opacity = 0;
 }
 
 function startLevel(i) {
@@ -418,6 +513,28 @@ function spark(pos, color, size, life) {
   effects.push({ mesh:m, t:0, life:life || 0.3, size:size || 1.2 });
 }
 
+const STAR = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); x.translate(64, 64);
+  const star = (n, r1, r2) => { x.beginPath(); for (let i = 0; i < n * 2; i++) { const r = i % 2 ? r2 : r1 * (0.8 + (i % 4) * 0.08), a = i / (n * 2) * Math.PI * 2; x.lineTo(Math.cos(a) * r, Math.sin(a) * r); } x.closePath(); };
+  star(11, 60, 26); x.fillStyle = '#ffe14d'; x.fill(); x.lineWidth = 5; x.strokeStyle = '#14102a'; x.stroke();
+  star(9, 34, 16); x.fillStyle = '#ffffff'; x.fill();
+  return new THREE.CanvasTexture(c);
+})();
+function impact(pos, size) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map:STAR, transparent:true, depthTest:false }));
+  s.material.rotation = Math.random() * Math.PI; s.position.copy(pos); s.renderOrder = 5; scene.add(s);
+  effects.push({ mesh:s, t:0, life:0.22, size:size || 2 });
+}
+const WORDS = ['¡POW!', '¡BAM!', '¡ZAS!', '¡PUM!', '¡KRAK!', '¡PAF!'];
+function pow(pos, word) {
+  const v = pos.clone().project(camera); if (v.z > 1) return;
+  const d = document.createElement('div'); d.className = 'pow';
+  d.textContent = word || WORDS[Math.floor(Math.random() * WORDS.length)];
+  d.style.left = ((v.x + 1) / 2 * innerWidth) + 'px'; d.style.top = ((1 - v.y) / 2 * innerHeight) + 'px';
+  d.style.setProperty('--r', (Math.random() * 24 - 12) + 'deg');
+  $('fx').appendChild(d); setTimeout(() => d.remove(), 650);
+}
+
 function hurtBoss(d, kb) {
   if (B.dead) return;
   B.hp -= d; B.f.flash = 0.12;
@@ -426,7 +543,7 @@ function hurtBoss(d, kb) {
     B.hp = 0; B.dead = true; G.won = true; G.endT = 2.4; G.mode = 'ending';
     for (const p of projectiles) scene.remove(p.mesh); projectiles = [];
     beams = beams.filter(b => { if (b.target === 'player') { scene.remove(b.mesh); return false; } return true; });
-    spark(chest(B), 0xffffff, 6, 0.8); G.shake = 0.8;
+    spark(chest(B), 0xffffff, 6, 0.8); impact(chest(B), 6); pow(chest(B).add(new V(0, 1.2, 0)), '¡KABOOM!'); G.shake = 0.8;
     banner(`¡${B.L.boss} fue derrotado!`, 2400);
   }
 }
@@ -444,13 +561,16 @@ function makeBeam(opts) {
   const outer = new THREE.Mesh(CYL, glow(opts.color, .55)), core = new THREE.Mesh(CYL, new THREE.MeshBasicMaterial({ color:0xffffff }));
   const tip = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), glow(opts.color, .8));
   outer.scale.set(opts.w, 1, opts.w); core.scale.set(opts.w * .4, 1, opts.w * .4); tip.scale.setScalar(opts.w * 1.5);
-  g.add(outer, core, tip); scene.add(g);
-  const b = Object.assign({ mesh:g, parts:[outer, core], tip, len:0, age:0 }, opts);
+  const haze = new THREE.Mesh(CYL, glow(opts.color, .22)); haze.scale.set(opts.w * 1.9, 1, opts.w * 1.9);
+  g.add(haze, outer, core, tip); scene.add(g);
+  const b = Object.assign({ mesh:g, parts:[haze, outer, core], tip, len:0, age:0 }, opts);
   beams.push(b); return b;
 }
 
 function fireBlast(from, to, color, dmg, speed, target) {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), glow(color, .95));
+  const m = new THREE.Group();
+  m.add(new THREE.Mesh(S(0.22), new THREE.MeshBasicMaterial({ color:0xffffff })));
+  m.add(new THREE.Mesh(S(0.45), glow(color, .85)));
   m.position.copy(from); scene.add(m);
   projectiles.push({ mesh:m, vel:to.clone().sub(from).normalize().multiplyScalar(speed), dmg, target, life:3, color });
 }
@@ -484,9 +604,9 @@ function pose(o, target, moving, dt) {
   if (o.block) { la.rotation.set(-1.5, 0, 0.7); ra.rotation.set(-1.5, 0, -0.7); }
   if (o.beamPose) { la.rotation.set(-1.5, 0, -0.15); ra.rotation.set(-1.5, 0, 0.15); }
   if (f.punchT > 0) { f.punchT -= dt; ra.rotation.set(-1.6, 0, 0); }
-  f.aura.material.opacity += ((o.auraOn ? 0.28 : 0) - f.aura.material.opacity) * Math.min(1, dt * 8);
+  f.aura.material.opacity += ((o.auraOn ? 0.22 : 0) - f.aura.material.opacity) * Math.min(1, dt * 8);
   if (o.auraColor) f.aura.material.color.setHex(o.auraColor);
-  f.aura.scale.set(1 + Math.sin(t * 20) * 0.05, 1.55, 1);
+  f.aura.scale.set(1 + Math.sin(t * 23) * 0.06, 1 + Math.sin(t * 17) * 0.1, 1 + Math.cos(t * 21) * 0.06); f.aura.rotation.y += dt * 3;
   f.flash = Math.max(0, f.flash - dt);
   const e = f.flash > 0 ? 0.8 : 0;
   for (const m of f.mats) m.emissive.setRGB(e, e, e);
@@ -532,7 +652,7 @@ function update(dt) {
     if (held('KeyJ') && P.cdPunch <= 0) {
       P.cdPunch = 0.32; P.f.punchT = 0.16;
       if (chest(P).distanceTo(chest(B)) < 3.3 && !B.dead) {
-        hurtBoss(7, fwd.clone().multiplyScalar(14)); spark(chest(B).addScaledVector(fwd, -0.4), 0xffffff, 1.4); G.shake = Math.max(G.shake, 0.15);
+        hurtBoss(7, fwd.clone().multiplyScalar(14)); const hp = chest(B).addScaledVector(fwd, -0.4); impact(hp, 2.2); if (Math.random() < 0.55) pow(hp.clone().add(new V(0, 0.8, 0))); G.shake = Math.max(G.shake, 0.15);
       }
     }
     if (held('KeyK') && P.cdBlast <= 0 && P.ki >= 6 && !B.dead) {
@@ -558,6 +678,9 @@ function update(dt) {
   P.auraOn = P.charging || (P.kame && P.kame.t < 0.75); P.auraColor = P.kame ? 0x6fc8ff : 0xffe066;
   P.beamPose = !!P.kame;
   pose(P, B.pos, moving, dt);
+  const speedFx = (moving && P.pos.y > 1) || ay !== 0 ? 0.55 : (P.knock.length() > 6 ? 0.45 : 0);
+  G.speed += (speedFx - G.speed) * Math.min(1, dt * 8);
+  $('speed').style.opacity = G.speed.toFixed(2); $('speed').style.setProperty('--a', (Math.random() * 6).toFixed(1) + 'deg');
   if (P.kame && P.kame.t < 0.75) spark(chest(P).addScaledVector(fwd, 0.7), 0x6fc8ff, 0.5, 0.12);
 
   /* Jefe */
@@ -592,7 +715,7 @@ function update(dt) {
       B.pos.y += Math.max(-1, Math.min(1, P.pos.y - B.pos.y)) * L.spd * 0.6 * dt;
       if (dist < 3.1 && B.cdMelee <= 0) {
         B.cdMelee = 1.15 * enr; B.f.punchT = 0.18;
-        hurtPlayer(7 * L.mult, dirH.clone().multiplyScalar(13)); spark(chest(P), 0xffffff, 1.3);
+        hurtPlayer(7 * L.mult, dirH.clone().multiplyScalar(13)); impact(chest(P), 2); pow(chest(P).add(new V(0, 0.9, 0)), P.block ? '¡BLOQUEO!' : undefined);
       }
       if (dist > 5 && B.cdBlast <= 0) {
         B.cdBlast = L.blast * enr * (0.8 + Math.random() * 0.4); B.f.punchT = 0.14;
