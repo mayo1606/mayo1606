@@ -13,6 +13,13 @@ html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:'Nunito',system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none}
 #game{position:fixed;inset:0}
 #game canvas{display:block}
+#animeGrade{position:fixed;inset:0;pointer-events:none;z-index:7;opacity:.22;mix-blend-mode:soft-light;background:
+  radial-gradient(circle at 50% 42%,transparent 0 48%,rgba(8,10,28,.28) 76%,rgba(3,5,18,.55) 100%),
+  linear-gradient(180deg,rgba(120,170,255,.08),transparent 35%,rgba(255,145,70,.06) 100%)}
+#animeGrade::before{content:"";position:absolute;inset:0;opacity:.16;background:
+  repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 4px)}
+#animeGrade.hit{opacity:.48;mix-blend-mode:screen;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.46),transparent 55%)}
+@media (prefers-reduced-motion:reduce){#animeGrade::before{display:none}}
 button{font:inherit;color:inherit;cursor:pointer}
 button:focus-visible{outline:3px solid var(--ki);outline-offset:2px}
 .display{font-family:'Bangers','Impact',system-ui,sans-serif;letter-spacing:.04em;font-weight:400}
@@ -95,6 +102,7 @@ kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border
 <div id="game"></div>
 <div id="speed" hidden></div>
 <div id="fx"></div>
+<div id="animeGrade" aria-hidden="true"></div>
 
 <div id="hud" hidden>
   <div class="bars left">
@@ -208,7 +216,10 @@ try { progress = Math.min(LEVELS.length, parseInt(localStorage.getItem('gaz-prog
 function saveProgress() { try { localStorage.setItem('gaz-progress', String(progress)); } catch (e) {} }
 
 /* ---------- Motor ---------- */
-const renderer = new THREE.WebGLRenderer({ antialias:true });
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
 const PR_MAX = Math.min(window.devicePixelRatio || 1, 1.5);
 let pixelRatio = PR_MAX; renderer.setPixelRatio(pixelRatio);
 $('game').appendChild(renderer.domElement);
@@ -216,13 +227,20 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 700);
 function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
-scene.add(new THREE.HemisphereLight(0xffffff, 0x8890b0, 0.48));
-const sunLight = new THREE.DirectionalLight(0xffffff, 0.68); sunLight.position.set(25, 50, 35); scene.add(sunLight);
+scene.add(new THREE.HemisphereLight(0xdde8ff, 0x59607f, 0.58));
+const sunLight = new THREE.DirectionalLight(0xfff1d6, 0.96); sunLight.position.set(24, 48, 30); scene.add(sunLight);
+const rimLight = new THREE.DirectionalLight(0x8cc8ff, 0.54); rimLight.position.set(-30, 22, -34); scene.add(rimLight);
+const warmFill = new THREE.DirectionalLight(0xff9a62, 0.20); warmFill.position.set(18, 8, -26); scene.add(warmFill);
 let world = new THREE.Group(); scene.add(world);
 
-/* ---------- Estilo dibujo animado: sombreado en 2 tonos como el anime + contornos ---------- */
+/* ---------- Estilo anime: cel shading en 4 bandas + contornos de tinta ---------- */
 const GRAD = (() => {
-  const t = new THREE.DataTexture(new Uint8Array([150, 150, 150, 255, 255, 255]), 2, 1, THREE.RGBFormat);
+  const t = new THREE.DataTexture(new Uint8Array([
+    62, 62, 70,
+    118, 118, 128,
+    198, 198, 208,
+    255, 255, 255
+  ]), 4, 1, THREE.RGBFormat);
   t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return t;
 })();
 const M = (c, e) => new THREE.MeshToonMaterial({ color:c, gradientMap:GRAD, emissive:e || 0 });
@@ -231,7 +249,7 @@ const INK = 0x14102a;
 // Contorno de personajes: la malla se infla por su normal y se pinta de tinta por detrás
 const OL = new THREE.ShaderMaterial({
   side:THREE.BackSide,
-  vertexShader:'void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vec3 n = normalize(normalMatrix * normal); mv.xyz += n * 0.028 * max(1.0, -mv.z * 0.06); gl_Position = projectionMatrix * mv; }',
+  vertexShader:'void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vec3 n = normalize(normalMatrix * normal); float distScale = clamp(-mv.z * 0.045, 1.0, 3.2); mv.xyz += n * 0.022 * distScale; gl_Position = projectionMatrix * mv; }',
   fragmentShader:'void main(){ gl_FragColor = vec4(0.078, 0.063, 0.165, 1.0); }',
 });
 // Contorno de escenario: copia un poco más grande, con niebla
@@ -447,7 +465,7 @@ function buildEnv(type) {
     side:THREE.BackSide, depthWrite:false,
     uniforms:{ a:{ value:new THREE.Color(E.top) }, b:{ value:new THREE.Color(E.horizon) } },
     vertexShader:'varying float h; void main(){ h = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader:'uniform vec3 a; uniform vec3 b; varying float h; void main(){ float k = smoothstep(0.0, 0.55, h); k = floor(k * 6.0) / 6.0; gl_FragColor = vec4(mix(b, a, k), 1.0); }',
+    fragmentShader:'uniform vec3 a; uniform vec3 b; varying float h; void main(){ float k = smoothstep(-0.06, 0.72, h); k = floor(k * 9.0) / 9.0; vec3 col = mix(b, a, k); float horizon = 1.0 - smoothstep(-0.03, 0.20, abs(h)); col += vec3(0.10,0.07,0.04) * horizon; gl_FragColor = vec4(col, 1.0); }',
   }));
   world.add(sky);
   const ground = new THREE.Mesh(new THREE.CircleGeometry(270, 64), M(E.ground)); ground.rotation.x = -Math.PI / 2; world.add(ground);
@@ -615,7 +633,9 @@ function pow(pos, word) {
 let impactTimer = 0;
 function impactFrame(ms) {
   if (matchMedia('(prefers-reduced-motion:reduce)').matches) return;
-  $('game').classList.add('inv'); clearTimeout(impactTimer); impactTimer = setTimeout(() => $('game').classList.remove('inv'), ms || 70);
+  $('game').classList.add('inv'); $('animeGrade').classList.add('hit');
+  clearTimeout(impactTimer);
+  impactTimer = setTimeout(() => { $('game').classList.remove('inv'); $('animeGrade').classList.remove('hit'); }, ms || 70);
 }
 
 function hurtBoss(d, kb) {
@@ -718,7 +738,9 @@ function pose(o, target, move, dt) {
 
   f.aura.material.opacity += ((o.auraOn ? 0.22 : 0) - f.aura.material.opacity) * Math.min(1, dt * 8);
   if (o.auraColor) f.aura.material.color.setHex(o.auraColor);
-  f.aura.scale.set(1 + Math.sin(t * 23) * 0.06, 1 + Math.sin(t * 17) * 0.1, 1 + Math.cos(t * 21) * 0.06); f.aura.rotation.y += dt * 3;
+  const auraPulse = o.auraOn ? 1 : 0;
+  f.aura.scale.set(1 + auraPulse * 0.08 + Math.sin(t * 23) * 0.07, 1 + auraPulse * 0.14 + Math.sin(t * 17) * 0.12, 1 + auraPulse * 0.08 + Math.cos(t * 21) * 0.07);
+  f.aura.rotation.y += dt * (3 + auraPulse * 2);
   f.flash = Math.max(0, f.flash - dt);
   const e = f.flash > 0 ? 0.8 : 0;
   for (const m of f.mats) m.emissive.setRGB(e, e, e);
@@ -907,6 +929,9 @@ function update(dt) {
   const camT = P.pos.clone().addScaledVector(fwd, -7.5).addScaledVector(right, 1.3).add(new V(0, 3.2, 0));
   camT.y = Math.max(0.8, camT.y);
   camera.position.lerp(camT, 1 - Math.exp(-6 * dt));
+  const animeFov = 62 + G.speed * 9 + (P.kame && P.kame.t >= 0.75 ? 4 : 0);
+  camera.fov += (animeFov - camera.fov) * Math.min(1, dt * 7);
+  camera.updateProjectionMatrix();
   const lookT = chest(P).lerp(chest(B), 0.45);
   camLook.lerp(lookT, 1 - Math.exp(-8 * dt));
   G.shake = Math.max(0, G.shake - dt);
@@ -970,7 +995,9 @@ function finish() {
 }
 
 function toTitle() {
-  clearFx(); removeFighter(P && P.f); removeFighter(B && B.f); P = B = null;
+  clearFx(); removeFighter(P && P.f); removeFighter(B && B.f);
+  for (const f of allyModels) removeFighter(f); allyModels = [];
+  P = B = null;
   $('hud').hidden = true; $('touch').hidden = true;
   titleScene(); renderLevels(); showOnly('sTitle'); G.mode = 'title';
 }
