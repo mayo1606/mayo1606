@@ -50,6 +50,7 @@ kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border
 
 /* Efectos de cómic */
 #speed{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:0;background:repeating-conic-gradient(from var(--a,0deg) at 50% 50%,transparent 0deg 3.2deg,rgba(255,255,255,.75) 3.2deg 3.6deg);-webkit-mask:radial-gradient(circle at 50% 50%,transparent 38%,#000 78%);mask:radial-gradient(circle at 50% 50%,transparent 38%,#000 78%)}
+#game.inv canvas{filter:invert(1) grayscale(1) contrast(1.6)}
 #fx{position:fixed;inset:0;pointer-events:none;z-index:6;overflow:hidden}
 .pow{position:absolute;transform:translate(-50%,-50%) rotate(var(--r,0deg));font-family:'Bangers','Impact',sans-serif;font-size:clamp(30px,5vw,54px);letter-spacing:.03em;color:#ffe14d;-webkit-text-stroke:2px #14102a;paint-order:stroke fill;text-shadow:3px 3px 0 #ff4d5e,5px 5px 0 #14102a;animation:pow .65s ease-out forwards;white-space:nowrap}
 @keyframes pow{0%{transform:translate(-50%,-50%) rotate(var(--r)) scale(.3)}18%{transform:translate(-50%,-50%) rotate(var(--r)) scale(1.25)}30%{transform:translate(-50%,-50%) rotate(var(--r)) scale(1)}100%{transform:translate(-50%,-90%) rotate(var(--r)) scale(1);opacity:0}}
@@ -91,7 +92,7 @@ kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border
 </style>
 
 <div id="game"></div>
-<div id="speed"></div>
+<div id="speed" hidden></div>
 <div id="fx"></div>
 
 <div id="hud" hidden>
@@ -207,7 +208,8 @@ function saveProgress() { try { localStorage.setItem('gaz-progress', String(prog
 
 /* ---------- Motor ---------- */
 const renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const PR_MAX = Math.min(window.devicePixelRatio || 1, 1.5);
+let pixelRatio = PR_MAX; renderer.setPixelRatio(pixelRatio);
 $('game').appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 700);
@@ -217,9 +219,9 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x8890b0, 0.48));
 const sunLight = new THREE.DirectionalLight(0xffffff, 0.68); sunLight.position.set(25, 50, 35); scene.add(sunLight);
 let world = new THREE.Group(); scene.add(world);
 
-/* ---------- Estilo dibujo animado: sombreado en 3 tonos + contornos ---------- */
+/* ---------- Estilo dibujo animado: sombreado en 2 tonos como el anime + contornos ---------- */
 const GRAD = (() => {
-  const t = new THREE.DataTexture(new Uint8Array([120, 120, 120, 200, 200, 200, 255, 255, 255]), 3, 1, THREE.RGBFormat);
+  const t = new THREE.DataTexture(new Uint8Array([150, 150, 150, 255, 255, 255]), 2, 1, THREE.RGBFormat);
   t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return t;
 })();
 const M = (c, e) => new THREE.MeshToonMaterial({ color:c, gradientMap:GRAD, emissive:e || 0 });
@@ -233,18 +235,6 @@ const OL = new THREE.ShaderMaterial({
 });
 // Contorno de escenario: copia un poco más grande, con niebla
 const OL_WORLD = new THREE.MeshBasicMaterial({ color:INK, side:THREE.BackSide });
-function outlineWorld(root, w) {
-  const list = [];
-  root.traverse(o => { if (o.isMesh && !o.userData.noOL && o.material && o.material.isMeshToonMaterial) list.push(o); });
-  for (const o of list) {
-    o.geometry.computeBoundingBox();
-    const s = new V(); o.geometry.boundingBox.getSize(s);
-    const h = new THREE.Mesh(o.geometry, OL_WORLD);
-    h.scale.set(1 + 2 * w / Math.max(s.x, 0.01), 1 + 2 * w / Math.max(s.y, 0.01), 1 + 2 * w / Math.max(s.z, 0.01));
-    o.add(h);
-  }
-}
-
 /* ---------- Personajes ---------- */
 const LOOKS = {
   goku:    { skin:0xffd6ad, torso:0xff7a1a, legs:0xff7a1a, arms:'skin', belt:0x2b5cff, boots:0x2b5cff, wrist:0x2b5cff, neck:0x2b5cff, hair:'goku', hairC:0x16131f, brow:0x16131f },
@@ -255,11 +245,46 @@ const LOOKS = {
   buu:     { skin:0xff9ecb, torso:0x222222, legs:0xffffff, arms:'skin', belt:0xffd23f, boots:0xffd23f, wrist:0xffd23f, hair:'buu', hairC:0xff9ecb, fat:true, cape:0x7a3cc8, alien:true, eye:0x111111, brow:0xd76fa0 },
 };
 
-const S = r => new THREE.SphereGeometry(r, 20, 14);
-const CY = (a, b, h) => new THREE.CylinderGeometry(a, b, h, 16);
-const CO = (r, h) => new THREE.ConeGeometry(r, h, 10);
-const BX = (w, h, d) => new THREE.BoxGeometry(w, h, d);
-const CAP = r => new THREE.SphereGeometry(r, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+const GEO = new Map();
+const memo = (key, make) => GEO.get(key) || (GEO.set(key, make()), GEO.get(key));
+const S = r => memo('s' + r, () => new THREE.SphereGeometry(r, 20, 14));
+const CY = (a, b, h) => memo(`c${a},${b},${h}`, () => new THREE.CylinderGeometry(a, b, h, 16));
+const CO = (r, h) => memo(`o${r},${h}`, () => new THREE.ConeGeometry(r, h, 10));
+const BX = (w, h, d) => memo(`b${w},${h},${d}`, () => new THREE.BoxGeometry(w, h, d));
+const CAP = r => memo('h' + r, () => new THREE.SphereGeometry(r, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2));
+
+// Une todas las piezas de una parte del cuerpo en una sola malla (colores por vértice)
+function mergeParts(meshes) {
+  const pos = [], nor = [], col = [], idx = []; let off = 0;
+  for (const m of meshes) {
+    m.updateMatrix();
+    const g = m.geometry.clone(); g.applyMatrix4(m.matrix);
+    const P = g.attributes.position, N = g.attributes.normal, c = m.material.color;
+    for (let i = 0; i < P.count; i++) { pos.push(P.getX(i), P.getY(i), P.getZ(i)); nor.push(N.getX(i), N.getY(i), N.getZ(i)); col.push(c.r, c.g, c.b); }
+    if (g.index) for (let i = 0; i < g.index.count; i++) idx.push(g.index.getX(i) + off); else for (let i = 0; i < P.count; i++) idx.push(i + off);
+    off += P.count; g.dispose();
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  out.setIndex(idx); out.computeBoundingSphere();
+  return out;
+}
+function bake(g, containers, aura) {
+  const skin = M(0xffffff); skin.vertexColors = true;
+  const ink = new THREE.MeshBasicMaterial({ vertexColors:true });
+  for (const c of containers) {
+    const toon = [], flat = [];
+    for (const ch of c.children) if (ch.isMesh) (ch.material.isMeshToonMaterial ? toon : flat).push(ch);
+    for (const ch of [...toon, ...flat]) c.remove(ch);
+    if (toon.length) { const geo = mergeParts(toon), m = new THREE.Mesh(geo, skin); m.add(new THREE.Mesh(geo, OL)); c.add(m); }
+    if (flat.length) c.add(new THREE.Mesh(mergeParts(flat), ink));
+  }
+  const parts = aura.children.slice(); for (const ch of parts) aura.remove(ch);
+  aura.add(new THREE.Mesh(mergeParts(parts), aura.material));
+  return [skin];
+}
 
 function makeFighter(key) {
   const L = LOOKS[key], g = new THREE.Group(), mats = [];
@@ -359,11 +384,13 @@ function makeFighter(key) {
   const core = new THREE.Mesh(S(1), auraMat); core.scale.set(1.15, 1.6, 1.15); aura.add(core);
   for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2, f = new THREE.Mesh(CO(0.35, 1.8), auraMat); f.position.set(Math.cos(a) * 0.8, 1.2, Math.sin(a) * 0.8); f.rotation.set(Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3); aura.add(f); }
   aura.material = auraMat;
+  g.rotation.order = 'YXZ';
+  const baked = bake(g, [g, ...legs, ...arms, head], aura);
 
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color:INK, transparent:true, opacity:.35, depthWrite:false }));
   shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
   scene.add(g);
-  return { g, mats, arms, legs, head, aura, shadow, flash:0, punchT:0 };
+  return { g, mats:baked, arms, legs, head, aura, shadow, flash:0, punchT:0, punchSide:false, hurt:0, phase:0, seed:Math.random() * 6 };
 }
 function removeFighter(f) { if (!f) return; scene.remove(f.g); scene.remove(f.shadow); }
 
@@ -376,6 +403,40 @@ const ENVS = {
   arena:   { top:0x3a8ff0, horizon:0xd8efff, ground:0x86c95e, patch:0x77ba50, cloud:0xffffff },
   sagrado: { top:0x1c1454, horizon:0x9a7ad6, ground:0x8fd070, patch:0x7cc062, cloud:null },
 };
+// Formas base de tamaño 1: cada objeto del escenario es una copia escalada (una sola llamada de dibujo por tipo)
+const U = {
+  sphere: new THREE.SphereGeometry(1, 16, 12),
+  cap: new THREE.SphereGeometry(1, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+  cyl: new THREE.CylinderGeometry(1, 1, 1, 12),
+  trunk: new THREE.CylinderGeometry(0.7, 1, 1, 8),
+  mesa: new THREE.CylinderGeometry(0.8, 1, 1, 12),
+  cone: new THREE.ConeGeometry(1, 1, 8),
+  box: new THREE.BoxGeometry(1, 1, 1),
+  rock: new THREE.DodecahedronGeometry(1),
+  crystal: new THREE.OctahedronGeometry(1),
+  disc: new THREE.CircleGeometry(1, 32).rotateX(-Math.PI / 2),
+};
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new V(), _s = new V();
+function inst(geo, mat, items, olXZ, olY) {
+  if (!items.length) return;
+  const m = new THREE.InstancedMesh(geo, mat, items.length); m.frustumCulled = false;
+  let o = null, hull = null;
+  if (olXZ) {
+    geo.computeBoundingBox(); const s = new V(); geo.boundingBox.getSize(s);
+    const y = olY === undefined ? olXZ : olY;
+    hull = new THREE.Matrix4().makeScale(1 + 2 * olXZ / s.x, 1 + 2 * y / Math.max(s.y, 0.01), 1 + 2 * olXZ / s.z);
+    o = new THREE.InstancedMesh(geo, OL_WORLD, items.length); o.frustumCulled = false;
+  }
+  items.forEach((it, i) => {
+    _q.setFromEuler(_e.set(it.rx || 0, it.ry || 0, it.rz || 0));
+    const sc = it.s || 1;
+    _m.compose(_p.set(it.x, it.y, it.z), _q, _s.set(it.sx || sc, it.sy || sc, it.sz || sc));
+    m.setMatrixAt(i, _m);
+    if (o) { _m.multiply(hull); o.setMatrixAt(i, _m); }
+  });
+  world.add(m); if (o) world.add(o);
+}
+
 function buildEnv(type) {
   scene.remove(world); world = new THREE.Group(); scene.add(world);
   const E = ENVS[type], r = rng(type.length * 97 + 13);
@@ -387,59 +448,70 @@ function buildEnv(type) {
     vertexShader:'varying float h; void main(){ h = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader:'uniform vec3 a; uniform vec3 b; varying float h; void main(){ float k = smoothstep(0.0, 0.55, h); k = floor(k * 6.0) / 6.0; gl_FragColor = vec4(mix(b, a, k), 1.0); }',
   }));
-  sky.userData.noOL = true; world.add(sky);
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(270, 64), M(E.ground)); ground.rotation.x = -Math.PI / 2; ground.userData.noOL = true; world.add(ground);
-  const put = (mesh, x, y, z) => { mesh.position.set(x, y, z); world.add(mesh); return mesh; };
+  world.add(sky);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(270, 64), M(E.ground)); ground.rotation.x = -Math.PI / 2; world.add(ground);
   const around = (min, max) => { const a = r() * Math.PI * 2, d = min + r() * (max - min); return [Math.cos(a) * d, Math.sin(a) * d]; };
-  const flat = (rad, mat, x, z, y) => { const m = new THREE.Mesh(new THREE.CircleGeometry(rad, 32), mat); m.rotation.x = -Math.PI / 2; m.userData.noOL = true; return put(m, x, y || 0.03, z); };
-  for (let i = 0; i < 26; i++) { const [x, z] = around(4, 140); const p = flat(3 + r() * 8, M(E.patch), x, z, 0.015); p.scale.set(1, 0.6 + r() * 0.6, 1); }
-  const ring = new THREE.Mesh(new THREE.RingGeometry(69, 70, 64), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:.3 })); ring.rotation.x = -Math.PI / 2; ring.userData.noOL = true; put(ring, 0, 0.05, 0);
-  // Nubes de dibujo animado
-  if (E.cloud !== null) for (let i = 0; i < 16; i++) {
-    const [x, z] = around(90, 230), c = new THREE.Group(), n = 3 + Math.floor(r() * 3), sz = 5 + r() * 5;
-    for (let k = 0; k < n; k++) { const b = new THREE.Mesh(S(sz * (0.7 + r() * 0.5)), M(E.cloud)); b.position.set((k - n / 2) * sz * 0.9, r() * sz * 0.4, r() * sz * 0.5); b.scale.y = 0.7; c.add(b); }
-    put(c, x, 55 + r() * 45, z);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(69, 70, 64), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:.3 })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; world.add(ring);
+
+  const patches = [];
+  for (let i = 0; i < 26; i++) { const [x, z] = around(4, 140), s = 3 + r() * 8; patches.push({ x, y:0.015, z, sx:s, sy:1, sz:s * (0.6 + r() * 0.6) }); }
+  inst(U.disc, M(E.patch), patches);
+  if (E.cloud !== null) {
+    const cl = [];
+    for (let i = 0; i < 16; i++) {
+      const [x, z] = around(90, 230), y = 55 + r() * 45, n = 3 + Math.floor(r() * 3), sz = 5 + r() * 5;
+      for (let k = 0; k < n; k++) { const s = sz * (0.7 + r() * 0.5); cl.push({ x:x + (k - n / 2) * sz * 0.9, y:y + r() * sz * 0.4, z:z + r() * sz * 0.5, sx:s, sy:s * 0.7, sz:s }); }
+    }
+    inst(U.sphere, M(E.cloud), cl, 0.05);
   }
 
   if (type === 'namek') {
-    for (let i = 0; i < 7; i++) { const [x, z] = around(20, 120); flat(6 + r() * 12, M(0x46d1c0), x, z); }
-    for (let i = 0; i < 45; i++) {
-      const [x, z] = around(22, 140), h = 4 + r() * 5;
-      put(new THREE.Mesh(CY(0.22, 0.32, h), M(0x9a7a45)), x, h / 2, z);
-      put(new THREE.Mesh(S(1.6 + r()), M(0x33b69c)), x, h + 0.8, z);
-    }
-    for (let i = 0; i < 7; i++) {
-      const [x, z] = around(30, 110), s = 2.5 + r() * 2;
-      put(new THREE.Mesh(CAP(s), M(0xf5faef)), x, 0, z);
-      const w = put(new THREE.Mesh(CY(0.5, 0.5, 0.2), M(0x2d6b64)), x, s * 0.55, z + s * 0.83); w.rotation.x = Math.PI / 2;
-    }
-    for (let i = 0; i < 14; i++) { const [x, z] = around(90, 200), h = 15 + r() * 30; put(new THREE.Mesh(new THREE.CylinderGeometry(4 + r() * 5, 7 + r() * 6, h, 10), M(0x8fc58a)), x, h / 2, z); }
+    const lakes = [], trunks = [], tops = [], houses = [], wins = [], mesas = [];
+    for (let i = 0; i < 7; i++) { const [x, z] = around(20, 120), s = 6 + r() * 12; lakes.push({ x, y:0.03, z, s }); }
+    for (let i = 0; i < 45; i++) { const [x, z] = around(22, 140), h = 4 + r() * 5; trunks.push({ x, y:h / 2, z, sx:0.32, sy:h, sz:0.32 }); tops.push({ x, y:h + 0.8, z, s:1.6 + r() }); }
+    for (let i = 0; i < 7; i++) { const [x, z] = around(30, 110), s = 2.5 + r() * 2; houses.push({ x, y:0, z, s }); wins.push({ x, y:s * 0.55, z:z + s * 0.83, sx:0.5, sy:0.2, sz:0.5, rx:Math.PI / 2 }); }
+    for (let i = 0; i < 14; i++) { const [x, z] = around(90, 200), h = 15 + r() * 30, rad = 7 + r() * 6; mesas.push({ x, y:h / 2, z, sx:rad, sy:h, sz:rad }); }
+    inst(U.disc, M(0x46d1c0), lakes);
+    inst(U.trunk, M(0x9a7a45), trunks, 0.09, 0);
+    inst(U.sphere, M(0x33b69c), tops, 0.06);
+    inst(U.cap, M(0xf5faef), houses, 0.04);
+    inst(U.cyl, M(0x2d6b64), wins);
+    inst(U.mesa, M(0x8fc58a), mesas, 0.03, 0);
     // Namekusei tiene tres soles
-    for (let i = 0; i < 3; i++) { const s = new THREE.Mesh(S(7), new THREE.MeshBasicMaterial({ color:0xfffbe0, fog:false })); put(s, -120 + i * 40, 90 + i * 12, -300); }
+    for (let i = 0; i < 3; i++) { const s = new THREE.Mesh(U.sphere, new THREE.MeshBasicMaterial({ color:0xfffbe0, fog:false })); s.scale.setScalar(7); s.position.set(-120 + i * 40, 90 + i * 12, -300); world.add(s); }
   } else if (type === 'tierra') {
-    for (let i = 0; i < 30; i++) { const [x, z] = around(35, 170), h = 6 + r() * 22, rad = 3 + r() * 6; put(new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 1.25, h, 10), M(0xc4834e)), x, h / 2, z); }
-    for (let i = 0; i < 40; i++) { const [x, z] = around(15, 120); put(new THREE.Mesh(new THREE.DodecahedronGeometry(0.6 + r() * 1.4), M(0xb08558)), x, 0.4, z); }
+    const mesas = [], rocks = [];
+    for (let i = 0; i < 30; i++) { const [x, z] = around(35, 170), h = 6 + r() * 22, rad = (3 + r() * 6) * 1.25; mesas.push({ x, y:h / 2, z, sx:rad, sy:h, sz:rad }); }
+    for (let i = 0; i < 40; i++) { const [x, z] = around(15, 120); rocks.push({ x, y:0.4, z, s:0.6 + r() * 1.4, ry:r() * 3 }); }
+    inst(U.mesa, M(0xc4834e), mesas, 0.04, 0);
+    inst(U.rock, M(0xb08558), rocks, 0.07);
   } else if (type === 'ruinas') {
-    for (let i = 0; i < 10; i++) { const [x, z] = around(18, 120); flat(4 + r() * 10, new THREE.MeshBasicMaterial({ color:0xff7a1f }), x, z); }
-    for (let i = 0; i < 35; i++) { const [x, z] = around(20, 150), s = 2 + r() * 6; const b = put(new THREE.Mesh(new THREE.DodecahedronGeometry(s * 0.7), M(0x57493c)), x, s * 0.4, z); b.scale.y = 1.5; b.rotation.set(r() * .5, r() * 3, r() * .5); }
-    for (let i = 0; i < 12; i++) { const [x, z] = around(25, 110), h = 3 + r() * 3; put(new THREE.Mesh(CY(0.15, 0.25, h), M(0x3b2f24)), x, h / 2, z); }
+    const lava = [], rocks = [], dead = [];
+    for (let i = 0; i < 10; i++) { const [x, z] = around(18, 120); lava.push({ x, y:0.03, z, s:4 + r() * 10 }); }
+    for (let i = 0; i < 35; i++) { const [x, z] = around(20, 150), s = (2 + r() * 6) * 0.7; rocks.push({ x, y:s * 0.55, z, sx:s, sy:s * 1.5, sz:s, rx:r() * .5, ry:r() * 3, rz:r() * .5 }); }
+    for (let i = 0; i < 12; i++) { const [x, z] = around(25, 110), h = 3 + r() * 3; dead.push({ x, y:h / 2, z, sx:0.25, sy:h, sz:0.25 }); }
+    inst(U.disc, new THREE.MeshBasicMaterial({ color:0xff7a1f }), lava);
+    inst(U.rock, M(0x57493c), rocks, 0.06);
+    inst(U.trunk, M(0x3b2f24), dead, 0.12, 0);
   } else if (type === 'arena') {
-    const plat = put(new THREE.Mesh(BX(40, 0.3, 40), M(0xefeadc)), 0, -0.1, 0); plat.userData.noOL = true;
+    const plat = new THREE.Mesh(U.box, M(0xefeadc)); plat.scale.set(40, 0.3, 40); plat.position.y = -0.1; world.add(plat);
     const grid = new THREE.GridHelper(40, 10, 0x9c957e, 0x9c957e); grid.position.y = 0.06; world.add(grid);
-    for (const [x, z] of [[-20, -20], [20, -20], [-20, 20], [20, 20]]) put(new THREE.Mesh(BX(1.2, 4, 1.2), M(0xe2dcc8)), x, 2, z);
-    for (let i = 0; i < 18; i++) { const [x, z] = around(110, 210), h = 20 + r() * 40; put(new THREE.Mesh(CO(10 + r() * 12, h), M(0x66a862)), x, h / 2, z); }
+    inst(U.box, M(0xe2dcc8), [[-20, -20], [20, -20], [-20, 20], [20, 20]].map(([x, z]) => ({ x, y:2, z, sx:1.2, sy:4, sz:1.2 })), 0.07);
+    const mts = [];
+    for (let i = 0; i < 18; i++) { const [x, z] = around(110, 210), h = 20 + r() * 40, rad = 10 + r() * 12; mts.push({ x, y:h / 2, z, sx:rad, sy:h, sz:rad }); }
+    inst(U.cone, M(0x66a862), mts, 0.03, 0.01);
   } else if (type === 'sagrado') {
-    for (let i = 0; i < 40; i++) {
-      const [x, z] = around(20, 150), s = 1 + r() * 3;
-      const c = put(new THREE.Mesh(new THREE.OctahedronGeometry(s), M(r() > .5 ? 0xc49cff : 0x8ff0ff, 0x221144)), x, s * 2, z); c.scale.y = 2; c.rotation.y = r() * 3;
-    }
-    for (let i = 0; i < 10; i++) { const [x, z] = around(60, 160), s = 5 + r() * 8; put(new THREE.Mesh(new THREE.DodecahedronGeometry(s), M(0x7cc062)), x, 25 + r() * 30, z); }
+    const c1 = [], c2 = [], isl = [];
+    for (let i = 0; i < 40; i++) { const [x, z] = around(20, 150), s = 1 + r() * 3; (r() > .5 ? c1 : c2).push({ x, y:s * 2, z, sx:s, sy:s * 2, sz:s, ry:r() * 3 }); }
+    for (let i = 0; i < 10; i++) { const [x, z] = around(60, 160); isl.push({ x, y:25 + r() * 30, z, s:5 + r() * 8 }); }
+    inst(U.crystal, M(0xc49cff, 0x221144), c1, 0.07);
+    inst(U.crystal, M(0x8ff0ff, 0x221144), c2, 0.07);
+    inst(U.rock, M(0x7cc062), isl, 0.04);
     const stars = new THREE.BufferGeometry(), pts = [];
     for (let i = 0; i < 500; i++) { const a = r() * Math.PI * 2, b = r() * 1.2 + 0.2, d = 380; pts.push(Math.cos(a) * Math.cos(b) * d, Math.sin(b) * d, Math.sin(a) * Math.cos(b) * d); }
     stars.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     world.add(new THREE.Points(stars, new THREE.PointsMaterial({ color:0xffffff, size:1.6, fog:false })));
   }
-  outlineWorld(world, 0.12);
 }
 
 /* ---------- Entrada ---------- */
@@ -472,16 +544,15 @@ document.querySelectorAll('#tbtns .tb').forEach(b => {
 
 /* ---------- Estado ---------- */
 const G = { speed:0, mode:'title', level:0, t:0, endT:0, shake:0, won:false };
-let P = null, B = null, allies = [], projectiles = [], beams = [], allyFx = [], effects = [];
+let P = null, B = null, allies = [], allyModels = [], allyEls = [], hudLast = {}, projectiles = [], beams = [], allyFx = [], effects = [];
 const camLook = new V();
 
 function clearFx() {
   for (const p of projectiles) scene.remove(p.mesh);
   for (const b of beams) scene.remove(b.mesh);
-  for (const a of allyFx) removeFighter(a.f);
   for (const e of effects) scene.remove(e.mesh);
   projectiles = []; beams = []; allyFx = []; effects = [];
-  G.speed = 0; $('speed').style.opacity = 0;
+  G.speed = 0; $('speed').hidden = true;
 }
 
 function startLevel(i) {
@@ -495,9 +566,14 @@ function startLevel(i) {
   $('bName').textContent = L.boss;
   $('allies').innerHTML = allies.map((a, j) => `<button class="ally" data-j="${j}" style="--c:#${a.color.toString(16).padStart(6, '0')}"><span class="k">TECLA ${a.n}</span><span class="an">${a.name}</span><span class="am">${a.move}</span><span class="cd" hidden></span></button>`).join('');
   $('allies').querySelectorAll('.ally').forEach(b => b.addEventListener('pointerdown', e => { e.preventDefault(); summon(+b.dataset.j); }));
+  allyEls = [...$('allies').querySelectorAll('.ally .cd')].map(el => ({ el, v:-1 })); hudLast = {};
+  for (const f of allyModels) removeFighter(f);
+  allyModels = allies.map(a => { const f = makeFighter(a.look); f.g.visible = f.shadow.visible = false; return f; });
   camera.position.set(0, 4, 32); camLook.set(0, 1.5, 0);
   showOnly(null); $('hud').hidden = false; $('touch').hidden = !isTouch;
   G.mode = 'play';
+  const warm = new THREE.Sprite(new THREE.SpriteMaterial({ map:STAR })); scene.add(warm);
+  renderer.compile(scene, camera); scene.remove(warm);
   banner(`Nivel ${i + 1}: ${L.place}`, 2200);
 }
 
@@ -508,7 +584,7 @@ let bannerTimer = 0;
 function banner(text, ms) { const b = $('banner'); b.textContent = text; b.classList.add('on'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => b.classList.remove('on'), ms || 1600); }
 
 function spark(pos, color, size, life) {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), glow(color, .9));
+  const m = new THREE.Mesh(S(1), glow(color, .9));
   m.position.copy(pos); m.scale.setScalar(0.2); scene.add(m);
   effects.push({ mesh:m, t:0, life:life || 0.3, size:size || 1.2 });
 }
@@ -535,15 +611,21 @@ function pow(pos, word) {
   $('fx').appendChild(d); setTimeout(() => d.remove(), 650);
 }
 
+let impactTimer = 0;
+function impactFrame(ms) {
+  if (matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+  $('game').classList.add('inv'); clearTimeout(impactTimer); impactTimer = setTimeout(() => $('game').classList.remove('inv'), ms || 70);
+}
+
 function hurtBoss(d, kb) {
   if (B.dead) return;
   B.hp -= d; B.f.flash = 0.12;
-  if (kb) { B.knock.add(kb); B.stun = Math.max(B.stun, 0.25); }
+  if (kb) { B.knock.add(kb); B.stun = Math.max(B.stun, 0.25); B.f.hurt = 0.18; }
   if (B.hp <= 0) {
     B.hp = 0; B.dead = true; G.won = true; G.endT = 2.4; G.mode = 'ending';
     for (const p of projectiles) scene.remove(p.mesh); projectiles = [];
     beams = beams.filter(b => { if (b.target === 'player') { scene.remove(b.mesh); return false; } return true; });
-    spark(chest(B), 0xffffff, 6, 0.8); impact(chest(B), 6); pow(chest(B).add(new V(0, 1.2, 0)), '¡KABOOM!'); G.shake = 0.8;
+    spark(chest(B), 0xffffff, 6, 0.8); impact(chest(B), 6); pow(chest(B).add(new V(0, 1.2, 0)), '¡KABOOM!'); G.shake = 0.8; impactFrame(140);
     banner(`¡${B.L.boss} fue derrotado!`, 2400);
   }
 }
@@ -551,7 +633,7 @@ function hurtPlayer(d, kb) {
   if (G.mode !== 'play') return;
   if (P.block) { d *= 0.25; if (kb) kb.multiplyScalar(0.3); }
   P.hp -= d; P.f.flash = 0.12; G.shake = Math.max(G.shake, P.block ? 0.1 : 0.3);
-  if (kb) P.knock.add(kb);
+  if (kb) { P.knock.add(kb); if (!P.block) P.f.hurt = 0.18; }
   if (P.hp <= 0) { P.hp = 0; G.won = false; G.endT = 1.6; G.mode = 'ending'; P.kame = null; banner('¡Goku cayó!', 1600); }
 }
 
@@ -559,7 +641,7 @@ const CYL = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true);
 function makeBeam(opts) {
   const g = new THREE.Group();
   const outer = new THREE.Mesh(CYL, glow(opts.color, .55)), core = new THREE.Mesh(CYL, new THREE.MeshBasicMaterial({ color:0xffffff }));
-  const tip = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), glow(opts.color, .8));
+  const tip = new THREE.Mesh(S(1), glow(opts.color, .8));
   outer.scale.set(opts.w, 1, opts.w); core.scale.set(opts.w * .4, 1, opts.w * .4); tip.scale.setScalar(opts.w * 1.5);
   const haze = new THREE.Mesh(CYL, glow(opts.color, .22)); haze.scale.set(opts.w * 1.9, 1, opts.w * 1.9);
   g.add(haze, outer, core, tip); scene.add(g);
@@ -580,7 +662,7 @@ function summon(j) {
   if (!a || a.cd > 0 || G.mode !== 'play' || B.dead) return;
   a.cd = ALLY_CD;
   const right = new V(-P.fwd.z, 0, P.fwd.x), side = allyFx.length % 2 ? -1 : 1;
-  const f = makeFighter(a.look);
+  const f = allyModels[j]; f.g.visible = f.shadow.visible = true;
   const pos = P.pos.clone().addScaledVector(right, 2.6 * side).addScaledVector(P.fwd, -1.2); pos.y += 0.6;
   f.g.scale.setScalar(0.01);
   allyFx.push({ f, pos, a, t:0, fired:false });
@@ -588,22 +670,51 @@ function summon(j) {
   banner(`¡${a.name}: ${a.move}!`, 1500);
 }
 
-/* ---------- Animación de personajes ---------- */
-function pose(o, target, moving, dt) {
-  const f = o.f;
-  f.g.position.copy(o.pos);
-  const dx = target.x - o.pos.x, dz = target.z - o.pos.z;
-  if (dx * dx + dz * dz > 0.001) f.g.rotation.y = Math.atan2(dx, dz);
-  const flying = o.pos.y > 0.4, t = G.t;
-  const swing = moving && !flying ? Math.sin(t * 11) * 0.6 : 0;
-  f.legs[0].rotation.x = flying ? 0.35 : swing; f.legs[1].rotation.x = flying ? 0.2 : -swing;
-  f.g.rotation.x = 0;
-  let [la, ra] = f.arms;
-  la.rotation.set(flying ? 0.3 : -swing * 0.6, 0, 0); ra.rotation.set(flying ? 0.3 : swing * 0.6, 0, 0);
-  if (o.charging) { la.rotation.set(0, 0, -0.5); ra.rotation.set(0, 0, 0.5); }
-  if (o.block) { la.rotation.set(-1.5, 0, 0.7); ra.rotation.set(-1.5, 0, -0.7); }
-  if (o.beamPose) { la.rotation.set(-1.5, 0, -0.15); ra.rotation.set(-1.5, 0, 0.15); }
-  if (f.punchT > 0) { f.punchT -= dt; ra.rotation.set(-1.6, 0, 0); }
+/* ---------- Animación de personajes (todo se interpola, nada salta) ---------- */
+function toward(obj, x, y, z, k) { const r = obj.rotation; r.x += (x - r.x) * k; r.y += (y - r.y) * k; r.z += (z - r.z) * k; }
+function pose(o, target, move, dt) {
+  const f = o.f, t = G.t;
+  const k = 1 - Math.exp(-14 * dt), kSlow = 1 - Math.exp(-7 * dt);
+  const flying = o.pos.y > 0.4;
+  const mx = move ? move.x : 0, mz = move ? move.z : 0, mv = Math.abs(mx) + Math.abs(mz) > 0.1;
+  f.phase += dt * (mv && !flying ? 11 : 2.4);
+  const bob = flying ? Math.sin(t * 3 + f.seed) * 0.12 : (mv ? Math.abs(Math.sin(f.phase)) * 0.09 : Math.sin(f.phase) * 0.03);
+  f.g.position.set(o.pos.x, o.pos.y + (o.dead ? 0 : bob), o.pos.z);
+
+  // Girar hacia el rival de forma suave
+  const want = Math.atan2(target.x - o.pos.x, target.z - o.pos.z);
+  let d = want - f.g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
+  f.g.rotation.y += d * (1 - Math.exp(-12 * dt));
+
+  // Inclinarse al volar, retroceder al recibir un golpe, caer al perder
+  f.hurt = Math.max(0, f.hurt - dt);
+  const lunge = f.punchT > 0 ? 0.25 : 0;
+  const pitch = o.dead ? -0.3 : (flying ? 0.4 : 0.1) * mz + lunge - f.hurt * 3;
+  const roll = o.dead ? Math.PI / 2 : -(flying ? 0.35 : 0.1) * mx;
+  toward(f.g, pitch, f.g.rotation.y, roll, o.dead ? kSlow * 0.5 : kSlow);
+
+  // Piernas: correr en el suelo, una pierna recogida al volar (pose típica del anime)
+  const sw = mv && !flying ? Math.sin(f.phase) * 0.75 : 0;
+  let l0 = sw, l1 = -sw;
+  if (flying) { l0 = 0.2 + 0.35 * Math.max(0, mz); l1 = 0.75 + 0.35 * Math.max(0, mz); }
+  toward(f.legs[0], l0, 0, 0.06, k); toward(f.legs[1], l1, 0, -0.06, k);
+
+  // Brazos
+  let a0 = [-sw * 0.8, 0, -0.12], a1 = [sw * 0.8, 0, 0.12];
+  if (flying) { a0 = mz > 0.3 ? [0.9, 0, -0.2] : [0.3, 0, -0.35]; a1 = mz > 0.3 ? [0.9, 0, 0.2] : [0.3, 0, 0.35]; }
+  else if (!mv) { a0 = [-0.55, 0, -0.3 + Math.sin(f.phase) * 0.04]; a1 = [-0.35, 0, 0.3 - Math.sin(f.phase) * 0.04]; }
+  if (o.charging) { a0 = [0.15, 0, -0.75]; a1 = [0.15, 0, 0.75]; }
+  if (o.block) { a0 = [-1.5, 0, 0.75]; a1 = [-1.5, 0, -0.75]; }
+  if (o.kameCharge) { a0 = [0.7, 0, -0.25]; a1 = [0.7, 0, 0.25]; }
+  if (o.beamPose) { a0 = [-1.55, 0, -0.1]; a1 = [-1.55, 0, 0.1]; }
+  let kp = k;
+  if (f.punchT > 0) {
+    f.punchT -= dt; kp = 1 - Math.exp(-45 * dt);
+    if (f.punchSide) a0 = [-1.7, 0, 0.18]; else a1 = [-1.7, 0, -0.18];
+  }
+  toward(f.arms[0], a0[0], a0[1], a0[2], kp); toward(f.arms[1], a1[0], a1[1], a1[2], kp);
+  toward(f.head, -pitch * 0.4, 0, -roll * 0.3, kSlow);
+
   f.aura.material.opacity += ((o.auraOn ? 0.22 : 0) - f.aura.material.opacity) * Math.min(1, dt * 8);
   if (o.auraColor) f.aura.material.color.setHex(o.auraColor);
   f.aura.scale.set(1 + Math.sin(t * 23) * 0.06, 1 + Math.sin(t * 17) * 0.1, 1 + Math.cos(t * 21) * 0.06); f.aura.rotation.y += dt * 3;
@@ -650,7 +761,7 @@ function update(dt) {
 
   if (playing && !P.block && !P.charging && !P.kame) {
     if (held('KeyJ') && P.cdPunch <= 0) {
-      P.cdPunch = 0.32; P.f.punchT = 0.16;
+      P.cdPunch = 0.3; P.f.punchT = 0.15; P.f.punchSide = !P.f.punchSide;
       if (chest(P).distanceTo(chest(B)) < 3.3 && !B.dead) {
         hurtBoss(7, fwd.clone().multiplyScalar(14)); const hp = chest(B).addScaledVector(fwd, -0.4); impact(hp, 2.2); if (Math.random() < 0.55) pow(hp.clone().add(new V(0, 0.8, 0))); G.shake = Math.max(G.shake, 0.15);
       }
@@ -669,34 +780,34 @@ function update(dt) {
   if (P.kame) {
     const k = P.kame; k.t += dt;
     if (k.t > 0.75 && !k.beam && playing && !B.dead) {
-      banner('¡HAAAA!', 900); G.shake = 0.25;
+      banner('¡HAAAA!', 900); G.shake = 0.25; impactFrame(80);
       k.beam = makeBeam({ color:0x6fc8ff, w:0.55, target:'boss', dps:32, life:1.1, grow:90,
         from:() => chest(P).addScaledVector(P.fwd, 0.9), to:() => chest(B) });
     }
     if (k.t > 1.95 || P.hp <= 0) P.kame = null;
   }
   P.auraOn = P.charging || (P.kame && P.kame.t < 0.75); P.auraColor = P.kame ? 0x6fc8ff : 0xffe066;
-  P.beamPose = !!P.kame;
-  pose(P, B.pos, moving, dt);
+  P.beamPose = !!(P.kame && P.kame.t >= 0.75); P.kameCharge = !!(P.kame && P.kame.t < 0.75);
+  pose(P, B.pos, moving ? { x:ax, z:az } : null, dt);
   const speedFx = (moving && P.pos.y > 1) || ay !== 0 ? 0.55 : (P.knock.length() > 6 ? 0.45 : 0);
   G.speed += (speedFx - G.speed) * Math.min(1, dt * 8);
-  $('speed').style.opacity = G.speed.toFixed(2); $('speed').style.setProperty('--a', (Math.random() * 6).toFixed(1) + 'deg');
-  if (P.kame && P.kame.t < 0.75) spark(chest(P).addScaledVector(fwd, 0.7), 0x6fc8ff, 0.5, 0.12);
+  const sp = $('speed'); sp.hidden = G.speed < 0.03;
+  if (!sp.hidden) { sp.style.opacity = G.speed.toFixed(2); sp.style.setProperty('--a', (Math.random() * 6).toFixed(1) + 'deg'); }
+  if (P.kameCharge && (G.frame & 1)) spark(chest(P).addScaledVector(fwd, -0.3).addScaledVector(right, 0.7), 0x6fc8ff, 0.6, 0.12);
 
   /* Jefe */
-  let bMoving = false;
+  let bMove = null;
   B.cdMelee -= dt; B.cdBlast -= dt; B.cdSpecial -= dt; B.stun -= dt;
   B.beamPose = false; B.auraOn = false;
   if (B.dead) {
     B.pos.y = Math.max(0, B.pos.y - 7 * dt);
-    B.f.g.rotation.z = Math.min(Math.PI / 2, B.f.g.rotation.z + dt * 2);
   } else if (playing) {
     const enr = B.hp < B.max * 0.4 ? 0.7 : 1;
     const to = chest(P).sub(chest(B)), dist = to.length();
     const hd = Math.hypot(to.x, to.z);
     if (B.state === 'windup') {
       B.t -= dt; B.auraOn = true; B.auraColor = L.color; B.beamPose = true;
-      spark(chest(B).addScaledVector(to.clone().normalize(), 0.8), L.color, 0.7, 0.12);
+      if (G.frame & 1) spark(chest(B).addScaledVector(to.clone().normalize(), 0.8), L.color, 0.7, 0.12);
       if (B.t < 0.35 && !B.aim) B.aim = chest(P);
       if (B.t <= 0) {
         const from = chest(B), dir = B.aim.clone().sub(from).normalize();
@@ -711,10 +822,10 @@ function update(dt) {
       const mv = new V();
       if (hd > 2.6) mv.addScaledVector(dirH, hd > 14 ? 1 : 0.55);
       mv.addScaledVector(side, Math.sin(G.t * 0.9) * 0.6);
-      B.pos.addScaledVector(mv, L.spd * dt); bMoving = mv.lengthSq() > 0.05;
+      B.pos.addScaledVector(mv, L.spd * dt); bMove = { x:mv.dot(side), z:mv.dot(dirH) };
       B.pos.y += Math.max(-1, Math.min(1, P.pos.y - B.pos.y)) * L.spd * 0.6 * dt;
       if (dist < 3.1 && B.cdMelee <= 0) {
-        B.cdMelee = 1.15 * enr; B.f.punchT = 0.18;
+        B.cdMelee = 1.15 * enr; B.f.punchT = 0.18; B.f.punchSide = !B.f.punchSide;
         hurtPlayer(7 * L.mult, dirH.clone().multiplyScalar(13)); impact(chest(P), 2); pow(chest(P).add(new V(0, 0.9, 0)), P.block ? '¡BLOQUEO!' : undefined);
       }
       if (dist > 5 && B.cdBlast <= 0) {
@@ -729,7 +840,7 @@ function update(dt) {
     B.pos.addScaledVector(B.knock, dt); B.knock.multiplyScalar(Math.exp(-5 * dt));
     clampArena(B);
   }
-  pose(B, P.pos, bMoving, dt);
+  pose(B, P.pos, bMove, dt);
 
   /* Aliados */
   for (const a of allies) a.cd = Math.max(0, a.cd - dt);
@@ -737,13 +848,13 @@ function update(dt) {
     x.t += dt;
     x.f.g.scale.setScalar(Math.min(1, x.t / 0.25));
     const o = { f:x.f, pos:x.pos, beamPose:x.t > 0.4, auraOn:true, auraColor:x.a.color };
-    pose(o, B.pos, false, dt);
+    pose(o, B.pos, null, dt);
     if (x.t > 0.6 && !x.fired && !B.dead) {
-      x.fired = true;
+      x.fired = true; impactFrame(60);
       makeBeam({ color:x.a.color, w:0.65, target:'boss', dps:50, life:1.0, grow:100,
         from:() => x.pos.clone().add(new V(0, 1.4, 0)).addScaledVector(P.fwd, 0.8), to:() => chest(B) });
     }
-    if (x.t > 2.1) { spark(x.pos.clone().add(new V(0, 1.2, 0)), x.a.color, 1.8, 0.3); removeFighter(x.f); return false; }
+    if (x.t > 2.1) { spark(x.pos.clone().add(new V(0, 1.2, 0)), x.a.color, 1.8, 0.3); x.f.g.visible = x.f.shadow.visible = false; return false; }
     return true;
   });
 
@@ -803,13 +914,9 @@ function update(dt) {
   camera.lookAt(camLook);
 
   /* HUD */
-  $('pHp').style.width = P.hp + '%';
-  $('pKi').style.width = P.ki + '%';
-  $('bHp').style.width = (B.hp / B.max * 100) + '%';
-  $('allies').querySelectorAll('.ally').forEach((el, j) => {
-    const a = allies[j], cd = el.querySelector('.cd');
-    cd.hidden = a.cd <= 0; if (a.cd > 0) cd.textContent = Math.ceil(a.cd);
-  });
+  const bar = (id, v) => { v = Math.round(v * 2) / 2; if (hudLast[id] !== v) { hudLast[id] = v; $(id).style.width = v + '%'; } };
+  bar('pHp', P.hp); bar('pKi', P.ki); bar('bHp', B.hp / B.max * 100);
+  allyEls.forEach((c, j) => { const v = Math.ceil(allies[j].cd); if (c.v !== v) { c.v = v; c.el.hidden = v <= 0; c.el.textContent = v; } });
 
   if (G.mode === 'ending') { G.endT -= dt; if (G.endT <= 0) finish(); }
 }
@@ -888,9 +995,18 @@ $('pMenu').onclick = toTitle;
 /* ---------- Arranque ---------- */
 titleScene(); renderLevels();
 let last = performance.now();
+const perf = { t:0, n:0, lock:0 };
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const raw = (now - last) / 1000, dt = Math.min(0.05, raw); last = now; G.frame = (G.frame || 0) + 1;
+  // Resolución adaptable: si el equipo no llega a ~50 fps, baja un poco la resolución
+  perf.t += raw; perf.n++;
+  if (perf.t > 2) {
+    const avg = perf.t / perf.n;
+    if (avg > 1 / 50 && pixelRatio > 0.6) { pixelRatio = Math.max(0.6, pixelRatio - 0.2); renderer.setPixelRatio(pixelRatio); perf.lock = 8; }
+    else if (avg < 1 / 58 && pixelRatio < PR_MAX && perf.lock <= 0) { pixelRatio = Math.min(PR_MAX, pixelRatio + 0.1); renderer.setPixelRatio(pixelRatio); }
+    perf.lock -= perf.t; perf.t = perf.n = 0;
+  }
   if (G.mode === 'play' || G.mode === 'ending') update(dt);
   else if (G.mode === 'title' || G.mode === 'menu') {
     G.t += dt;
