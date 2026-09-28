@@ -288,6 +288,7 @@ async function loadExternalAsset(key){
   else if(c.type==='fbx'){scene=await promiseLoad(fbxLoader,c.url);animations=scene.animations||[];}
   else {const mats=await promiseLoad(mtlLoader,c.mtl);mats.preload();scene=await promiseLoad(new THREE.OBJLoader(modelManager).setMaterials(mats),c.url);}
   const diffuse=c.diffuse?await promiseLoad(textureLoader,c.diffuse):null;
+  if(diffuse&&key==='piccolo')diffuse.wrapS=diffuse.wrapT=THREE.RepeatWrapping;
   if(diffuse){diffuse.encoding=THREE.sRGBEncoding;diffuse.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());}
   return {scene,animations,diffuse};
 }
