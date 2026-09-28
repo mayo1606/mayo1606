@@ -16,8 +16,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply guarded character integration patch
-        run: python3 qa/apply-character-fix.py
+      - name: Apply inspected material and skeletal fixes
+        run: |
+          python3 qa/piccolo-material-fix.py
+          python3 qa/apply-character-fix.py
       - name: Install pinned test dependencies
         run: |
           mkdir -p /tmp/character-qa
@@ -29,13 +31,12 @@ jobs:
           ln -s /tmp/character-qa/node_modules/three qa-vendor
           python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/qa-server.log 2>&1 &
           NODE_PATH=/tmp/character-qa/node_modules node qa/character-regression.cjs
-          NODE_PATH=/tmp/character-qa/node_modules node qa/piccolo-material-variants.cjs
       - name: Commit tested game files on isolated fix branch
         if: success()
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add goku-alianzas-z/index.html goku-alianzas-z/juego.html goku-alianzas-z/assets/models/buu/22.mtl
+          git add goku-alianzas-z/index.html goku-alianzas-z/juego.html goku-alianzas-z/assets/models/buu/22.mtl qa/character-v2.inc.js
           if ! git diff --cached --quiet; then
             git commit -m 'Fix character loading, materials and skeletal motion [skip ci]'
             git push origin HEAD:chatgpt/character-fixes-v2
