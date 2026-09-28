@@ -29,6 +29,7 @@ jobs:
           ln -s /tmp/character-qa/node_modules/three qa-vendor
           python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/qa-server.log 2>&1 &
           NODE_PATH=/tmp/character-qa/node_modules node qa/character-regression.cjs
+          NODE_PATH=/tmp/character-qa/node_modules node qa/piccolo-material-variants.cjs
       - name: Commit tested game files on isolated fix branch
         if: success()
         run: |
