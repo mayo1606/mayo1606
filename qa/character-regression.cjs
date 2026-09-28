@@ -12,6 +12,7 @@ html=html.replace('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.mi
 fs.writeFileSync('goku-alianzas-z/qa-regression.html',html);
 (async()=>{
  const browser=await chromium.launch({headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--no-sandbox']});
+ try {
  const page=await browser.newPage({viewport:{width:960,height:640},deviceScaleFactor:1});
  const errors=[],warnings=[],failed=[],report={};
  page.on('pageerror',e=>errors.push(String(e)));
@@ -32,23 +33,34 @@ fs.writeFileSync('goku-alianzas-z/qa-regression.html',html);
    __QA.renderer.render=()=>__QA.renderer.__rawRender(__gallery.s,__gallery.camera);__QA.renderer.setPixelRatio(1);
    window.__object={f,pos:new THREE.Vector3(),hp:100,charging:false,block:false};
    for(let i=0;i<45;i++)__QA.pose(__object,new THREE.Vector3(0,0,10),null,1/60);
-   const maps=[];f.external&&f.external.traverse(o=>{if(o.isMesh)for(const m of(Array.isArray(o.material)?o.material:[o.material]))if(m.map)maps.push({name:m.name,width:m.map.image&&m.map.image.width,height:m.map.image&&m.map.image.height,src:String(m.map.image&&m.map.image.src||'').slice(-100)});});
-   return {status:f.modelStatus,segments:f.rig&&f.rig.count||0,maps,signature:f.rig?f.rig.limbs.flatMap(r=>r.upper?r.upper.bone.quaternion.toArray():[]):[],time:f.motionTime,mixerTime:f.mixer&&f.mixer.time};
+   const maps=[];const skinBox=new THREE.Box3();const v=new THREE.Vector3();
+   f.g.updateMatrixWorld(true);
+   f.external&&f.external.traverse(o=>{
+    if(!o.isMesh||!o.visible)return;
+    if(o.isSkinnedMesh)o.skeleton.update();
+    for(let i=0;i<o.geometry.attributes.position.count;i+=7){v.fromBufferAttribute(o.geometry.attributes.position,i);if(o.isSkinnedMesh)o.boneTransform(i,v);skinBox.expandByPoint(v.applyMatrix4(o.matrixWorld));}
+    for(const m of(Array.isArray(o.material)?o.material:[o.material]))if(m.map)maps.push({name:m.name,width:m.map.image&&m.map.image.width,height:m.map.image&&m.map.image.height,src:String(m.map.image&&m.map.image.src||'').slice(-100)});
+   });
+   return {status:f.modelStatus,segments:f.rig&&f.rig.count||0,maps,skinBounds:{min:skinBox.min.toArray(),max:skinBox.max.toArray()},signature:f.rig?f.rig.limbs.flatMap(r=>r.upper?r.upper.bone.quaternion.toArray():[]):[],time:f.motionTime,mixerTime:f.mixer&&f.mixer.time};
   });
-  report[key]=info;assert.notEqual(info.status,'error',key+' failed to attach');
+  report[key]=info;
+  fs.writeFileSync(out+'/regression.json',JSON.stringify({report,errors,warnings,failed},null,2));
+  await page.waitForTimeout(120);await page.screenshot({path:out+'/'+key+'-idle.png'});
+  assert.notEqual(info.status,'error',key+' failed to attach');
   if(!['freezer','buu'].includes(key))assert.equal(info.segments,8,key+' must bind all eight limb segments');
+  assert(info.skinBounds.min.every(Number.isFinite)&&info.skinBounds.max.every(Number.isFinite),key+' has nonfinite skinned bounds');
+  assert(info.skinBounds.min[1]>-.7&&info.skinBounds.max[1]<4.2,key+' skin escaped its normalized height');
+  assert(info.skinBounds.max[0]-info.skinBounds.min[0]<5,key+' skin width exploded');
+  assert(info.skinBounds.max[2]-info.skinBounds.min[2]<5,key+' skin depth exploded');
   for(const m of info.maps)assert(m.width>0&&m.height>0,key+' has an unloaded texture');
-  await page.waitForTimeout(120);
-  await page.screenshot({path:out+'/'+key+'-idle.png'});
   const afterPause=await page.evaluate(()=>({time:__fighter.motionTime,mixerTime:__fighter.mixer&&__fighter.mixer.time}));
-  assert.equal(afterPause.time,info.time,key+' advanced while paused');
-  assert.equal(afterPause.mixerTime,info.mixerTime,key+' mixer advanced while paused');
+  assert.equal(afterPause.time,info.time,key+' advanced while paused');assert.equal(afterPause.mixerTime,info.mixerTime,key+' mixer advanced while paused');
   const attack=await page.evaluate(()=>{__QA.playExternal(__fighter,'attack');for(let i=0;i<9;i++)__QA.pose(__object,new THREE.Vector3(0,0,10),null,1/60);return __fighter.rig?__fighter.rig.limbs.flatMap(r=>r.upper?r.upper.bone.quaternion.toArray():[]):[];});
   if(info.segments)assert(attack.some((v,i)=>Math.abs(v-info.signature[i])>.01),key+' real skeleton did not move for attack');
   await page.screenshot({path:out+'/'+key+'-attack.png'});
   await page.evaluate(()=>{__QA.playExternal(__fighter,'death');__QA.playExternal(__fighter,'idle');});
   assert.equal(await page.evaluate(()=>__fighter.motionEvent.kind),'death',key+' death reverted to idle');
-  console.log('CHARACTER_TEST',key,JSON.stringify({status:info.status,segments:info.segments,textures:info.maps.length,pause:'passed',attack:info.segments?'passed':'static asset',death:'passed'}));
+  console.log('CHARACTER_TEST',key,JSON.stringify({status:info.status,segments:info.segments,textures:info.maps.length,bounds:info.skinBounds,pause:'passed',attack:info.segments?'passed':'static asset',death:'passed'}));
   await page.evaluate(()=>{const f=__fighter;__QA.removeFighter(f);__gallery.s.remove(f.g);__gallery.s.remove(f.shadow);});
  }
  await page.evaluate(()=>{__QA.renderer.render=__QA.renderer.__rawRender;__QA.startLevel(0);__QA.G.mode='paused';});
@@ -59,5 +71,5 @@ fs.writeFileSync('goku-alianzas-z/qa-regression.html',html);
  console.log('BROWSER_ERRORS',JSON.stringify({errors,warnings:[...new Set(warnings)],failed}));
  assert.deepEqual(errors,[],'browser exceptions');assert.deepEqual(failed,[],'failed resource requests');
  assert(!warnings.some(w=>/Shader Error|VALIDATE_STATUS|fflate is not defined|No se pudo cargar/.test(w)),'shader or model failure');
- await browser.close();
+ } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exitCode=1;});
