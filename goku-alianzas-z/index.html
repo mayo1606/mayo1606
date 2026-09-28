@@ -841,6 +841,7 @@ function summon(j) {
   const f = allyModels[j]; f.g.visible = f.shadow.visible = true;
   const pos = P.pos.clone().addScaledVector(right, 2.6 * side).addScaledVector(P.fwd, -1.2); pos.y += 0.6;
   f.g.scale.setScalar(0.01);
+  playExternal(f, 'special', {once:true, speed:1.0, fade:0.08});
   allyFx.push({ f, pos, a, t:0, fired:false });
   spark(pos.clone().add(new V(0, 1.2, 0)), a.color, 2.2, 0.35);
   banner(`¡${a.name}: ${a.move}!`, 1500);
