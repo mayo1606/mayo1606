@@ -2,6 +2,9 @@ name: Character browser diagnostics
 on:
   push:
     branches: [chatgpt/character-fixes-v2]
+concurrency:
+  group: character-qa-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -13,29 +16,28 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Apply guarded character integration patch
+        run: python3 qa/apply-character-fix.py
       - name: Install pinned test dependencies
         run: |
           mkdir -p /tmp/character-qa
           npm install --prefix /tmp/character-qa playwright@1.55.0 three@0.128.0
           cd /tmp/character-qa
           npx playwright install --with-deps chromium
-      - name: Inspect characters in Chromium WebGL
+      - name: Test characters in Chromium WebGL
         run: |
           ln -s /tmp/character-qa/node_modules/three qa-vendor
           python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/qa-server.log 2>&1 &
-          NODE_PATH=/tmp/character-qa/node_modules node qa/character-diagnostics.cjs
+          NODE_PATH=/tmp/character-qa/node_modules node qa/character-regression.cjs
       - name: Collect diagnostic bundle
         if: always()
         run: |
-          mkdir -p qa-results/source qa-results/vendor
+          mkdir -p qa-results/source
           cp goku-alianzas-z/index.html qa-results/source/
-          cp /tmp/character-qa/node_modules/three/build/three.js qa-results/vendor/ || true
-          cp /tmp/character-qa/node_modules/three/examples/js/loaders/{GLTFLoader,FBXLoader,OBJLoader,MTLLoader}.js qa-results/vendor/ || true
-          cp /tmp/character-qa/node_modules/three/examples/js/utils/SkeletonUtils.js qa-results/vendor/ || true
-          cp /tmp/character-qa/node_modules/three/examples/js/libs/fflate.min.js qa-results/vendor/ || true
+          cp /tmp/qa-server.log qa-results/ 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: character-diagnostics
+          name: character-regression
           path: qa-results/
           retention-days: 3
