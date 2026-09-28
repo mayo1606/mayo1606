@@ -184,6 +184,8 @@ kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
 (() => {
 const $ = id => document.getElementById(id);
@@ -251,6 +253,73 @@ const OL = new THREE.ShaderMaterial({
 // Contorno de escenario: copia un poco más grande, con niebla
 const OL_WORLD = new THREE.MeshBasicMaterial({ color:INK, side:THREE.BackSide });
 /* ---------- Personajes ---------- */
+const MODEL_FILES = {
+  goku:'assets/models/goku_ssj3.glb',
+  piccolo:'assets/models/piccolo.glb',
+  vegeta:'assets/models/vegeta.glb',
+  freezer:'assets/models/frieza.glb',
+  cell:'assets/models/cell.glb',
+  buu:'assets/models/majin_buu.glb',
+};
+const MODEL_CACHE = new Map();
+const externalMixers = new Set();
+const gltfLoader = new THREE.GLTFLoader();
+function getModelAsset(key) {
+  if (!MODEL_FILES[key]) return Promise.reject(new Error('No model configured'));
+  if (!MODEL_CACHE.has(key)) MODEL_CACHE.set(key, new Promise((resolve, reject) => gltfLoader.load(MODEL_FILES[key], resolve, undefined, reject)));
+  return MODEL_CACHE.get(key);
+}
+function toonifyExternal(root, targetMats) {
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    o.frustumCulled = false;
+    const old = Array.isArray(o.material) ? o.material : [o.material];
+    const next = old.map(m => {
+      const nm = new THREE.MeshToonMaterial({
+        color:m && m.color ? m.color.clone() : new THREE.Color(0xffffff),
+        map:m && m.map ? m.map : null,
+        gradientMap:GRAD,
+        transparent:!!(m && m.transparent),
+        opacity:m && m.opacity !== undefined ? m.opacity : 1,
+        alphaTest:m && m.alphaTest ? m.alphaTest : 0,
+        side:m && m.side !== undefined ? m.side : THREE.FrontSide,
+        skinning:!!o.isSkinnedMesh
+      });
+      targetMats.push(nm);
+      return nm;
+    });
+    o.material = Array.isArray(o.material) ? next : next[0];
+  });
+}
+function attachExternalModel(fighter, key) {
+  getModelAsset(key).then(gltf => {
+    if (!fighter || !fighter.g || !fighter.g.parent) return;
+    const ext = THREE.SkeletonUtils.clone(gltf.scene);
+    toonifyExternal(ext, fighter.mats);
+    ext.updateMatrixWorld(true);
+    let box = new THREE.Box3().setFromObject(ext);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const desired = key === 'buu' ? 3.05 : 3.15;
+    const scale = size.y > 0.001 ? desired / size.y : 1;
+    ext.scale.setScalar(scale);
+    ext.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(ext);
+    const center = new THREE.Vector3(); box.getCenter(center);
+    ext.position.x -= center.x;
+    ext.position.z -= center.z;
+    ext.position.y -= box.min.y;
+    for (const ch of fighter.g.children) if (ch !== fighter.aura) ch.visible = false;
+    fighter.g.add(ext);
+    fighter.external = ext;
+    if (gltf.animations && gltf.animations.length) {
+      const mixer = new THREE.AnimationMixer(ext);
+      fighter.mixer = mixer; externalMixers.add(mixer);
+      const idle = gltf.animations.find(a => /idle|stance|fight|loop/i.test(a.name)) || gltf.animations[0];
+      mixer.clipAction(idle).reset().play();
+    }
+  }).catch(() => { /* keep procedural fallback when the asset is absent */ });
+}
+
 const LOOKS = {
   goku:    { skin:0xffd6ad, torso:0xff7a1a, legs:0xff7a1a, arms:'skin', belt:0x2b5cff, boots:0x2b5cff, wrist:0x2b5cff, neck:0x2b5cff, hair:'goku', hairC:0x16131f, brow:0x16131f },
   piccolo: { skin:0x6ccf52, torso:0x5a2d86, legs:0x5a2d86, arms:'skin', belt:0x3fa0e0, boots:0x7a4a2a, hair:'piccolo', hairC:0xf4f4f4, cape:0xf2f2f2, alien:true, brow:0x3f8a33 },
@@ -405,9 +474,15 @@ function makeFighter(key) {
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color:INK, transparent:true, opacity:.35, depthWrite:false }));
   shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
   scene.add(g);
-  return { g, mats:baked, arms, legs, head, aura, shadow, flash:0, punchT:0, punchSide:false, hurt:0, phase:0, seed:Math.random() * 6 };
+  const fighter = { g, mats:baked, arms, legs, head, aura, shadow, flash:0, punchT:0, punchSide:false, hurt:0, phase:0, seed:Math.random() * 6, external:null, mixer:null };
+  attachExternalModel(fighter, key);
+  return fighter;
 }
-function removeFighter(f) { if (!f) return; scene.remove(f.g); scene.remove(f.shadow); }
+function removeFighter(f) {
+  if (!f) return;
+  if (f.mixer) externalMixers.delete(f.mixer);
+  scene.remove(f.g); scene.remove(f.shadow);
+}
 
 /* ---------- Escenarios ---------- */
 function rng(seed) { return () => (seed = (seed * 16807) % 2147483647, (seed - 1) / 2147483646); }
@@ -1023,6 +1098,7 @@ const perf = { t:0, n:0, lock:0 };
 function frame(now) {
   requestAnimationFrame(frame);
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw); last = now; G.frame = (G.frame || 0) + 1;
+  for (const mixer of externalMixers) mixer.update(dt);
   // Resolución adaptable: si el equipo no llega a ~50 fps, baja un poco la resolución
   perf.t += raw; perf.n++;
   if (perf.t > 2) {
