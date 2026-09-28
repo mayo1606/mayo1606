@@ -185,6 +185,9 @@ kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
 (() => {
@@ -254,19 +257,43 @@ const OL = new THREE.ShaderMaterial({
 const OL_WORLD = new THREE.MeshBasicMaterial({ color:INK, side:THREE.BackSide });
 /* ---------- Personajes ---------- */
 const MODEL_FILES = {
-  goku:'assets/models/goku_ssj3.glb',
-  piccolo:'assets/models/piccolo.glb',
-  vegeta:'assets/models/vegeta.glb',
-  freezer:'assets/models/frieza.glb',
-  cell:'assets/models/cell.glb',
-  buu:'assets/models/majin_buu.glb',
+  goku:{ type:'gltf', url:'assets/models/goku/Goku Super Saiyan 3_1_.glb' },
+  piccolo:{ type:'fbx', url:'assets/models/piccolo/DBFZ PICCOLO.fbx' },
+  vegeta:{ type:'fbx', url:'assets/models/vegeta/Vegeta.fbx' },
+  freezer:{ type:'fbx', url:'assets/models/frieza/Freeza.fbx' },
+  cell:{ type:'gltf', url:'assets/models/cell/Cell Perfect.gltf' },
+  buu:{ type:'obj', url:'assets/models/buu/22.OBJ', mtl:'assets/models/buu/22.mtl' },
 };
 const MODEL_CACHE = new Map();
 const externalMixers = new Set();
 const gltfLoader = new THREE.GLTFLoader();
+const fbxLoader = new THREE.FBXLoader();
+const objLoader = new THREE.OBJLoader();
+const mtlLoader = new THREE.MTLLoader();
+
+function loadExternalAsset(key) {
+  const cfg = MODEL_FILES[key];
+  if (!cfg) return Promise.reject(new Error('No model configured'));
+  if (cfg.type === 'gltf') {
+    return new Promise((resolve,reject)=>gltfLoader.load(cfg.url, g=>resolve({scene:g.scene, animations:g.animations||[]}), undefined, reject));
+  }
+  if (cfg.type === 'fbx') {
+    return new Promise((resolve,reject)=>fbxLoader.load(cfg.url, o=>resolve({scene:o, animations:o.animations||[]}), undefined, reject));
+  }
+  if (cfg.type === 'obj') {
+    return new Promise((resolve,reject)=>{
+      if (!cfg.mtl) return objLoader.load(cfg.url, o=>resolve({scene:o,animations:[]}), undefined, reject);
+      mtlLoader.load(cfg.mtl, mats=>{
+        mats.preload();
+        const loader=new THREE.OBJLoader(); loader.setMaterials(mats);
+        loader.load(cfg.url, o=>resolve({scene:o,animations:[]}), undefined, reject);
+      }, undefined, reject);
+    });
+  }
+  return Promise.reject(new Error('Unsupported model type'));
+}
 function getModelAsset(key) {
-  if (!MODEL_FILES[key]) return Promise.reject(new Error('No model configured'));
-  if (!MODEL_CACHE.has(key)) MODEL_CACHE.set(key, new Promise((resolve, reject) => gltfLoader.load(MODEL_FILES[key], resolve, undefined, reject)));
+  if (!MODEL_CACHE.has(key)) MODEL_CACHE.set(key, loadExternalAsset(key));
   return MODEL_CACHE.get(key);
 }
 function toonifyExternal(root, targetMats) {
@@ -285,6 +312,7 @@ function toonifyExternal(root, targetMats) {
         side:m && m.side !== undefined ? m.side : THREE.FrontSide,
         skinning:!!o.isSkinnedMesh
       });
+      if (nm.map) nm.map.encoding = THREE.sRGBEncoding;
       targetMats.push(nm);
       return nm;
     });
@@ -292,9 +320,9 @@ function toonifyExternal(root, targetMats) {
   });
 }
 function attachExternalModel(fighter, key) {
-  getModelAsset(key).then(gltf => {
+  getModelAsset(key).then(asset => {
     if (!fighter || !fighter.g || !fighter.g.parent) return;
-    const ext = THREE.SkeletonUtils.clone(gltf.scene);
+    const ext = THREE.SkeletonUtils.clone(asset.scene);
     toonifyExternal(ext, fighter.mats);
     ext.updateMatrixWorld(true);
     let box = new THREE.Box3().setFromObject(ext);
@@ -311,13 +339,15 @@ function attachExternalModel(fighter, key) {
     for (const ch of fighter.g.children) if (ch !== fighter.aura) ch.visible = false;
     fighter.g.add(ext);
     fighter.external = ext;
-    if (gltf.animations && gltf.animations.length) {
+    const animations = asset.animations || [];
+    if (animations.length) {
       const mixer = new THREE.AnimationMixer(ext);
       fighter.mixer = mixer; externalMixers.add(mixer);
-      const idle = gltf.animations.find(a => /idle|stance|fight|loop/i.test(a.name)) || gltf.animations[0];
-      mixer.clipAction(idle).reset().play();
+      const idle = animations.find(a => /idle|stance|fight|std|loop/i.test(a.name)) || animations[0];
+      fighter.animations = animations;
+      fighter.action = mixer.clipAction(idle); fighter.action.reset().play();
     }
-  }).catch(() => { /* keep procedural fallback when the asset is absent */ });
+  }).catch(err => console.warn('Modelo externo no disponible para', key, err));
 }
 
 const LOOKS = {
@@ -474,7 +504,7 @@ function makeFighter(key) {
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color:INK, transparent:true, opacity:.35, depthWrite:false }));
   shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
   scene.add(g);
-  const fighter = { g, mats:baked, arms, legs, head, aura, shadow, flash:0, punchT:0, punchSide:false, hurt:0, phase:0, seed:Math.random() * 6, external:null, mixer:null };
+  const fighter = { g, mats:baked, arms, legs, head, aura, shadow, flash:0, punchT:0, punchSide:false, hurt:0, phase:0, seed:Math.random() * 6, external:null, mixer:null, animations:[], action:null };
   attachExternalModel(fighter, key);
   return fighter;
 }
