@@ -1,11 +1,20 @@
 """Apply the character integration fix with guarded, idempotent replacements."""
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
-block = (root / 'qa/character-v2.inc.js').read_text()
+include = root / 'qa/character-v2.inc.js'
+block = include.read_text()
+# Piccolo's FBX contains duplicated bone chains and mesh transforms at scale 100.
+# Skeleton.pose() on this asset corrupts the bind transforms (confirmed using
+# actual skinned vertex bounds). Preserve its already-correct imported rest pose.
+block = block.replace('skeletons.forEach(s=>s.pose());model.updateMatrixWorld(true);', "if(key!=='piccolo') skeletons.forEach(s=>s.pose());model.updateMatrixWorld(true);")
+include.write_text(block)
 for filename in ['index.html', 'juego.html']:
     p = root / 'goku-alianzas-z' / filename
     s = p.read_text()
     if 'Character integration v2:' in s:
+        start = s.index('/* Character integration v2:')
+        end = s.index('\nconst LOOKS = {', start)
+        p.write_text(s[:start] + block + '\n' + s[end:])
         continue
     def replace(old, new, label):
         global s
