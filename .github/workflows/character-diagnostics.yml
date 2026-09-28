@@ -6,7 +6,7 @@ concurrency:
   group: character-qa-${{ github.ref }}
   cancel-in-progress: true
 permissions:
-  contents: read
+  contents: write
 jobs:
   inspect:
     runs-on: ubuntu-latest
@@ -29,6 +29,16 @@ jobs:
           ln -s /tmp/character-qa/node_modules/three qa-vendor
           python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/qa-server.log 2>&1 &
           NODE_PATH=/tmp/character-qa/node_modules node qa/character-regression.cjs
+      - name: Commit tested game files on isolated fix branch
+        if: success()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add goku-alianzas-z/index.html goku-alianzas-z/juego.html goku-alianzas-z/assets/models/buu/22.mtl
+          if ! git diff --cached --quiet; then
+            git commit -m 'Fix character loading, materials and skeletal motion [skip ci]'
+            git push origin HEAD:chatgpt/character-fixes-v2
+          fi
       - name: Collect diagnostic bundle
         if: always()
         run: |
