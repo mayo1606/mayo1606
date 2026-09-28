@@ -1,0 +1,75 @@
+'use strict';
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const {chromium}=require('playwright');
+const out='qa-results';fs.mkdirSync(out,{recursive:true});
+let html=fs.readFileSync('goku-alianzas-z/index.html','utf8');
+assert(html.includes('Character integration v2:'));
+for(const m of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi))new Function(m[1]);
+const hook=`window.__QA={G,scene,renderer,camera,getModelAsset,makeFighter,removeFighter,pose,playExternal,startLevel,pause,update,keys,pressed,get P(){return P},get B(){return B}};`;
+html=html.replace('/* ---------- Arranque ---------- */',hook+'\n/* ---------- Arranque ---------- */');
+html=html.replace('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js','/qa-vendor/build/three.js').replaceAll('https://cdn.jsdelivr.net/npm/three@0.128.0/','/qa-vendor/');
+fs.writeFileSync('goku-alianzas-z/qa-regression.html',html);
+(async()=>{
+ const browser=await chromium.launch({headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--no-sandbox']});
+ try {
+ const page=await browser.newPage({viewport:{width:960,height:640},deviceScaleFactor:1});
+ const errors=[],warnings=[],failed=[],report={};
+ page.on('pageerror',e=>errors.push(String(e)));
+ page.on('console',m=>{if(['warning','error'].includes(m.type()))warnings.push(m.text().slice(0,1500));});
+ page.on('response',r=>{if(r.status()>=400)failed.push({status:r.status(),url:r.url()});});
+ await page.route('**/fonts.googleapis.com/**',r=>r.fulfill({status:200,body:''}));
+ await page.goto('http://127.0.0.1:8765/goku-alianzas-z/qa-regression.html',{waitUntil:'load',timeout:60000});
+ await page.waitForFunction(()=>!!window.__QA);
+ await page.evaluate(()=>{__QA.G.mode='paused';document.querySelectorAll('.screen,#hud,#touch,#speed,#fx,#animeGrade').forEach(e=>e.hidden=true);});
+ for(const key of ['goku','piccolo','vegeta','freezer','cell','buu']){
+  await page.evaluate(async k=>{await __QA.getModelAsset(k);window.__fighter=__QA.makeFighter(k);},key);
+  await page.waitForFunction(()=>__fighter.modelStatus!=='loading',{timeout:30000});
+  const info=await page.evaluate(()=>{
+   const f=__fighter;const s=new THREE.Scene();s.background=new THREE.Color(0x738c96);s.add(new THREE.HemisphereLight(0xffffff,0x667788,.58));const light=new THREE.DirectionalLight(0xfff4e6,.9);light.position.set(4,7,6);s.add(light);
+   const floor=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshBasicMaterial({color:0x526871}));floor.rotation.x=-Math.PI/2;s.add(floor);s.add(f.g);s.add(f.shadow);
+   const camera=new THREE.PerspectiveCamera(40,960/640,.01,1000);camera.position.set(.25,1.65,6.5);camera.lookAt(0,1.5,0);window.__gallery={s,camera};
+   if(!__QA.renderer.__rawRender)__QA.renderer.__rawRender=__QA.renderer.render.bind(__QA.renderer);
+   __QA.renderer.render=()=>__QA.renderer.__rawRender(__gallery.s,__gallery.camera);__QA.renderer.setPixelRatio(1);
+   window.__object={f,pos:new THREE.Vector3(),hp:100,charging:false,block:false};
+   for(let i=0;i<45;i++)__QA.pose(__object,new THREE.Vector3(0,0,10),null,1/60);
+   const maps=[];const skinBox=new THREE.Box3();const v=new THREE.Vector3();
+   f.g.updateMatrixWorld(true);
+   f.external&&f.external.traverse(o=>{
+    if(!o.isMesh||!o.visible)return;
+    if(o.isSkinnedMesh)o.skeleton.update();
+    for(let i=0;i<o.geometry.attributes.position.count;i+=7){v.fromBufferAttribute(o.geometry.attributes.position,i);if(o.isSkinnedMesh)o.boneTransform(i,v);skinBox.expandByPoint(v.applyMatrix4(o.matrixWorld));}
+    for(const m of(Array.isArray(o.material)?o.material:[o.material]))if(m.map)maps.push({name:m.name,width:m.map.image&&m.map.image.width,height:m.map.image&&m.map.image.height,src:String(m.map.image&&m.map.image.src||'').slice(-100)});
+   });
+   return {status:f.modelStatus,segments:f.rig&&f.rig.count||0,maps,skinBounds:{min:skinBox.min.toArray(),max:skinBox.max.toArray()},signature:f.rig?f.rig.limbs.flatMap(r=>r.upper?r.upper.bone.quaternion.toArray():[]):[],time:f.motionTime,mixerTime:f.mixer&&f.mixer.time};
+  });
+  report[key]=info;
+  fs.writeFileSync(out+'/regression.json',JSON.stringify({report,errors,warnings,failed},null,2));
+  await page.waitForTimeout(120);await page.screenshot({path:out+'/'+key+'-idle.png'});
+  assert.notEqual(info.status,'error',key+' failed to attach');
+  if(!['freezer','buu'].includes(key))assert.equal(info.segments,8,key+' must bind all eight limb segments');
+  assert(info.skinBounds.min.every(Number.isFinite)&&info.skinBounds.max.every(Number.isFinite),key+' has nonfinite skinned bounds');
+  assert(info.skinBounds.min[1]>-.7&&info.skinBounds.max[1]<4.2,key+' skin escaped its normalized height');
+  assert(info.skinBounds.max[0]-info.skinBounds.min[0]<5,key+' skin width exploded');
+  assert(info.skinBounds.max[2]-info.skinBounds.min[2]<5,key+' skin depth exploded');
+  for(const m of info.maps)assert(m.width>0&&m.height>0,key+' has an unloaded texture');
+  const afterPause=await page.evaluate(()=>({time:__fighter.motionTime,mixerTime:__fighter.mixer&&__fighter.mixer.time}));
+  assert.equal(afterPause.time,info.time,key+' advanced while paused');assert.equal(afterPause.mixerTime,info.mixerTime,key+' mixer advanced while paused');
+  const attack=await page.evaluate(()=>{__QA.playExternal(__fighter,'attack');for(let i=0;i<9;i++)__QA.pose(__object,new THREE.Vector3(0,0,10),null,1/60);return __fighter.rig?__fighter.rig.limbs.flatMap(r=>r.upper?r.upper.bone.quaternion.toArray():[]):[];});
+  if(info.segments)assert(attack.some((v,i)=>Math.abs(v-info.signature[i])>.01),key+' real skeleton did not move for attack');
+  await page.screenshot({path:out+'/'+key+'-attack.png'});
+  await page.evaluate(()=>{__QA.playExternal(__fighter,'death');__QA.playExternal(__fighter,'idle');});
+  assert.equal(await page.evaluate(()=>__fighter.motionEvent.kind),'death',key+' death reverted to idle');
+  console.log('CHARACTER_TEST',key,JSON.stringify({status:info.status,segments:info.segments,textures:info.maps.length,bounds:info.skinBounds,pause:'passed',attack:info.segments?'passed':'static asset',death:'passed'}));
+  await page.evaluate(()=>{const f=__fighter;__QA.removeFighter(f);__gallery.s.remove(f.g);__gallery.s.remove(f.shadow);});
+ }
+ await page.evaluate(()=>{__QA.renderer.render=__QA.renderer.__rawRender;__QA.startLevel(0);__QA.G.mode='paused';});
+ await page.waitForFunction(()=>__QA.P.f.external&&__QA.B.f.external);
+ await page.evaluate(()=>{__QA.P.pos.set(0,0,4);__QA.B.pos.set(0,0,-2);for(let i=0;i<60;i++)__QA.update(1/60);__QA.renderer.render(__QA.scene,__QA.camera);});
+ await page.screenshot({path:out+'/gameplay.png'});
+ fs.writeFileSync(out+'/regression.json',JSON.stringify({report,errors,warnings,failed},null,2));
+ console.log('BROWSER_ERRORS',JSON.stringify({errors,warnings:[...new Set(warnings)],failed}));
+ assert.deepEqual(errors,[],'browser exceptions');assert.deepEqual(failed,[],'failed resource requests');
+ assert(!warnings.some(w=>/Shader Error|VALIDATE_STATUS|fflate is not defined|No se pudo cargar/.test(w)),'shader or model failure');
+ } finally { await browser.close(); }
+})().catch(e=>{console.error(e);process.exitCode=1;});

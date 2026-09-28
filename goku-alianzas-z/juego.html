@@ -185,6 +185,7 @@ kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/fflate.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
@@ -256,152 +257,187 @@ const OL = new THREE.ShaderMaterial({
 // Contorno de escenario: copia un poco más grande, con niebla
 const OL_WORLD = new THREE.MeshBasicMaterial({ color:INK, side:THREE.BackSide });
 /* ---------- Personajes ---------- */
+/* Character integration v2: explicit materials, preserved import transforms and skeletal poses. */
 const MODEL_FILES = {
-  goku:{ type:'gltf', url:'assets/models/goku/Goku Super Saiyan 3_1_.glb' },
-  piccolo:{ type:'fbx', url:'assets/models/piccolo/DBFZ PICCOLO.fbx' },
-  vegeta:{ type:'fbx', url:'assets/models/vegeta/Vegeta.fbx' },
-  freezer:{ type:'fbx', url:'assets/models/frieza/Freeza.fbx' },
-  cell:{ type:'gltf', url:'assets/models/cell/Cell Perfect.gltf' },
-  buu:{ type:'obj', url:'assets/models/buu/22.OBJ', mtl:'assets/models/buu/22.mtl' },
+  goku:{type:'gltf',url:'assets/models/goku/Goku Super Saiyan 3_1_.glb',height:2.9},
+  piccolo:{type:'fbx',url:'assets/models/piccolo/DBFZ PICCOLO.fbx',height:3.05,diffuse:'assets/models/piccolo/Untitled433_20250829210547.png'},
+  vegeta:{type:'fbx',url:'assets/models/vegeta/Vegeta.fbx',height:2.65,diffuse:'assets/models/vegeta/Vegeta.png'},
+  freezer:{type:'fbx',url:'assets/models/frieza/Freeza.fbx',height:2.7},
+  cell:{type:'gltf',url:'assets/models/cell/Cell Perfect.gltf',height:3.15},
+  buu:{type:'obj',url:'assets/models/buu/22.OBJ',mtl:'assets/models/buu/22.mtl',height:2.65,yaw:Math.PI,diffuse:'assets/models/buu/223.jpg'}
 };
-const MODEL_CACHE = new Map();
-const externalMixers = new Set();
-const modelManager = new THREE.LoadingManager();
-modelManager.setURLModifier(url => {
-  const clean = url.replace(/\\/g,'/');
-  if (/Vegeta\.fbm\/Vegeta\.png$/i.test(clean) || /Vegeta\.png$/i.test(clean)) return 'assets/models/vegeta/Vegeta.png';
-  if (/piccolo_gi_d\.png$/i.test(clean)) return 'assets/models/piccolo/piccolo_gi_d.png';
-  if (/Piccolo_decal/i.test(clean)) return 'assets/models/piccolo/Piccolo_decal.tga.png';
-  if (/Piccolo_detail/i.test(clean)) return 'assets/models/piccolo/Piccolo_detail.tga.png';
+const MODEL_CACHE=new Map(), externalMixers=new Set();
+const modelManager=new THREE.LoadingManager();
+modelManager.setURLModifier(url=>{
+  const clean=url.replace(/\\/g,'/');
+  if(/Vegeta\.png$/i.test(clean))return 'assets/models/vegeta/Vegeta.png';
+  if(/piccolo_gi_d\.png$/i.test(clean))return 'assets/models/piccolo/piccolo_gi_d.png';
+  if(/Piccolo_decal/i.test(clean))return 'assets/models/piccolo/Piccolo_decal.tga.png';
+  if(/Piccolo_detail/i.test(clean))return 'assets/models/piccolo/Piccolo_detail.tga.png';
   return url;
 });
-const gltfLoader = new THREE.GLTFLoader(modelManager);
-const fbxLoader = new THREE.FBXLoader(modelManager);
-const objLoader = new THREE.OBJLoader(modelManager);
-const mtlLoader = new THREE.MTLLoader(modelManager);
-
-function loadExternalAsset(key) {
-  const cfg = MODEL_FILES[key];
-  if (!cfg) return Promise.reject(new Error('No model configured'));
-  if (cfg.type === 'gltf') {
-    return new Promise((resolve,reject)=>gltfLoader.load(cfg.url, g=>resolve({scene:g.scene, animations:g.animations||[]}), undefined, reject));
-  }
-  if (cfg.type === 'fbx') {
-    return new Promise((resolve,reject)=>fbxLoader.load(cfg.url, o=>resolve({scene:o, animations:o.animations||[]}), undefined, reject));
-  }
-  if (cfg.type === 'obj') {
-    return new Promise((resolve,reject)=>{
-      if (!cfg.mtl) return objLoader.load(cfg.url, o=>resolve({scene:o,animations:[]}), undefined, reject);
-      mtlLoader.load(cfg.mtl, mats=>{
-        mats.preload();
-        const loader=new THREE.OBJLoader(); loader.setMaterials(mats);
-        loader.load(cfg.url, o=>resolve({scene:o,animations:[]}), undefined, reject);
-      }, undefined, reject);
-    });
-  }
-  return Promise.reject(new Error('Unsupported model type'));
+const gltfLoader=new THREE.GLTFLoader(modelManager),fbxLoader=new THREE.FBXLoader(modelManager);
+const objLoader=new THREE.OBJLoader(modelManager),mtlLoader=new THREE.MTLLoader(modelManager);
+const textureLoader=new THREE.TextureLoader(modelManager);
+const promiseLoad=(loader,url)=>new Promise((ok,fail)=>loader.load(url,ok,undefined,fail));
+async function loadExternalAsset(key){
+  const c=MODEL_FILES[key];if(!c)throw new Error('Unknown character: '+key);
+  let scene,animations=[];
+  if(c.type==='gltf'){const a=await promiseLoad(gltfLoader,c.url);scene=a.scene;animations=a.animations||[];}
+  else if(c.type==='fbx'){scene=await promiseLoad(fbxLoader,c.url);animations=scene.animations||[];}
+  else {const mats=await promiseLoad(mtlLoader,c.mtl);mats.preload();scene=await promiseLoad(new THREE.OBJLoader(modelManager).setMaterials(mats),c.url);}
+  const diffuse=c.diffuse?await promiseLoad(textureLoader,c.diffuse):null;
+  if(diffuse&&key==='piccolo')diffuse.wrapS=diffuse.wrapT=THREE.RepeatWrapping;
+  if(diffuse){diffuse.encoding=THREE.sRGBEncoding;diffuse.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());}
+  const piccoloClothing=key==='piccolo'?await promiseLoad(textureLoader,'assets/models/piccolo/piccolo_gi_d.png'):null;
+  if(piccoloClothing){piccoloClothing.encoding=THREE.sRGBEncoding;piccoloClothing.wrapS=piccoloClothing.wrapT=THREE.RepeatWrapping;piccoloClothing.anisotropy=4;}
+  return {scene,animations,diffuse,piccoloClothing};
 }
-function getModelAsset(key) {
-  if (!MODEL_CACHE.has(key)) MODEL_CACHE.set(key, loadExternalAsset(key));
+function getModelAsset(key){
+  if(!MODEL_CACHE.has(key))MODEL_CACHE.set(key,loadExternalAsset(key).catch(e=>{MODEL_CACHE.delete(key);throw e;}));
   return MODEL_CACHE.get(key);
 }
-function toonifyExternal(root, targetMats) {
-  root.traverse(o => {
-    if (!o.isMesh) return;
-    o.frustumCulled = false;
-    const old = Array.isArray(o.material) ? o.material : [o.material];
-    const next = old.map(m => {
-      const nm = new THREE.MeshToonMaterial({
-        color:m && m.color ? m.color.clone() : new THREE.Color(0xffffff),
-        map:m && m.map ? m.map : null,
-        normalMap:m && m.normalMap ? m.normalMap : null,
-        alphaMap:m && m.alphaMap ? m.alphaMap : null,
-        gradientMap:GRAD,
-        transparent:!!(m && m.transparent),
-        opacity:m && m.opacity !== undefined ? m.opacity : 1,
-        alphaTest:m && m.alphaTest ? m.alphaTest : 0,
-        side:m && m.side !== undefined ? m.side : THREE.FrontSide,
-        skinning:!!o.isSkinnedMesh
-      });
-      if (nm.map) nm.map.encoding = THREE.sRGBEncoding;
-      nm.name = m && m.name ? m.name : '';
-      targetMats.push(nm);
-      return nm;
+function toonifyExternal(root,targetMats,key,diffuse,piccoloClothing){
+  root.traverse(o=>{
+    if(o.isLight||o.isCamera)o.visible=false;
+    if(!o.isMesh)return;
+    // This surface duplicates exactly 33,043 body triangles, with incompatible UVs.
+    // It is NOT an outline shell: its normals and positions duplicate the original parts.
+    if(key==='piccolo'&&/mesh13008/.test(o.name)){o.visible=false;return;}
+    const garment=key==='piccolo'&&/\+40-mesh/.test(o.name);
+    o.frustumCulled=false;
+    const old=Array.isArray(o.material)?o.material:[o.material];
+    const next=old.map(m=>{
+      const name=(m&&m.name)||'',outline=key==='cell'&&/OUTLINE/i.test(o.name+' '+name);
+      const map=outline?null:((garment&&piccoloClothing)||diffuse||(m&&m.map)||null);
+      const color=outline?new THREE.Color(0x101321):(map?new THREE.Color(0xffffff):(m&&m.color?m.color.clone():new THREE.Color(0xffffff)));
+      // FBX diffuse colors are sRGB; glTF factors are already linear. Never convert normal/alpha data.
+      if(!map&&MODEL_FILES[key].type==='fbx')color.convertSRGBToLinear();
+      const nm=new THREE.MeshToonMaterial({name,color,map,gradientMap:GRAD,skinning:!!o.isSkinnedMesh,
+        morphTargets:!!o.morphTargetInfluences,morphNormals:!!o.morphTargetInfluences,
+        transparent:false,opacity:1,alphaTest:map&&key==='cell'?.2:0,
+        side:outline?THREE.BackSide:THREE.FrontSide,vertexColors:false});
+      if(map)map.encoding=THREE.sRGBEncoding;
+      // The procedural scenery uses its legacy output. Imported textures get their own correct sRGB output.
+      nm.onBeforeCompile=shader=>{shader.fragmentShader=shader.fragmentShader.replace('#include <encodings_fragment>','gl_FragColor = LinearTosRGB(gl_FragColor);');};
+      nm.customProgramCacheKey=()=> 'gaz-character-linear-to-srgb-v2';
+      if(outline){nm.color.setHex(0x101321);nm.polygonOffset=true;nm.polygonOffsetFactor=1;nm.polygonOffsetUnits=1;}
+      targetMats.push(nm);return nm;
     });
-    o.material = Array.isArray(o.material) ? next : next[0];
+    o.material=Array.isArray(o.material)?next:next[0];
+    if(/dummy_material/i.test(old.map(m=>m.name).join(' ')))o.visible=false;
+    if(o.isSkinnedMesh)o.normalizeSkinWeights();
   });
 }
-function clipFor(fighter, kind) {
-  if (!fighter || !fighter.animations || !fighter.animations.length) return null;
-  const A = fighter.animations;
-  const tests = {
-    idle:[/STD.*4LP/i,/idle/i,/stance/i,/fight.*loop/i,/loop/i],
-    charge:[/BST.*2CG/i,/charge/i,/power/i],
-    attack:[/BST.*3HT/i,/attack/i,/punch/i,/hit/i],
-    special:[/DEM.*Ah1P/i,/DEM.*Bh2P/i,/special/i,/beam/i,/kame/i],
-    hurt:[/DEM.*3HT0/i,/damage/i,/hurt/i,/hit/i],
-    death:[/DEM.*0DEM/i,/death/i,/down/i,/ko/i],
-  };
-  for (const re of (tests[kind] || [])) {
-    const hit = A.find(a => re.test(a.name || ''));
-    if (hit) return hit;
+const RIG_NAMES={
+ goku:{hips:'WAIST',spine:'SPINE2',head:'HEAD',upper:['SHOULDER_L','SHOULDER_R'],lower:['ELBOW_L','ELBOW_R'],hand:['WRIST_L','WRIST_R'],thigh:['THIGH_L','THIGH_R'],calf:['CLANK_L','CLANK_R'],foot:['TOE1_L','TOE1_R']},
+ vegeta:{hips:'mixamorigHips',spine:'mixamorigSpine1',head:'mixamorigHead',upper:['mixamorigLeftArm','mixamorigRightArm'],lower:['mixamorigLeftForeArm','mixamorigRightForeArm'],hand:['mixamorigLeftHand','mixamorigRightHand'],thigh:['mixamorigLeftUpLeg','mixamorigRightUpLeg'],calf:['mixamorigLeftLeg','mixamorigRightLeg'],foot:['mixamorigLeftFoot','mixamorigRightFoot']},
+ piccolo:{hips:'root_hips',spine:'spine_upper',head:'head_neck_upper',upper:['arm_left_shoulder_2','arm_right_shoulder_2'],lower:['arm_left_elbow','arm_right_elbow'],hand:['arm_left_wrist','arm_right_wrist'],thigh:['leg_left_thigh','leg_right_thigh'],calf:['leg_left_knee','leg_right_knee'],foot:['leg_left_ankle','leg_right_ankle']},
+ cell:{hips:'pelvis',spine:'spine_02',head:'head',upper:['upperarm_l','upperarm_r'],lower:['lowerarm_l','lowerarm_r'],hand:['hand_l','hand_r'],thigh:['thigh_l','thigh_r'],calf:['calf_l','calf_r'],foot:['foot_l','foot_r']}
+};
+function buildRig(root,key){
+  const names=RIG_NAMES[key];if(!names)return null;
+  const byName=new Map();root.traverse(b=>{if(b.isBone&&!byName.has(b.name))byName.set(b.name,b);});
+  const find=name=>byName.get(name);
+  const rigs=[],rootQ=root.getWorldQuaternion(new THREE.Quaternion()),invRoot=rootQ.clone().invert();
+  function segment(name,end){
+    const b=find(name),e=find(end);if(!b||!e)return null;
+    const v=e.getWorldPosition(new V()).sub(b.getWorldPosition(new V())).applyQuaternion(invRoot);
+    if(v.lengthSq()<1e-10)return null;
+    const rest=b.getWorldQuaternion(new THREE.Quaternion()).premultiply(invRoot);
+    return {bone:b,axis:v.normalize(),rest,current:rest.clone()};
   }
-  return kind === 'idle' ? A[0] : null;
-}
-function playExternal(fighter, kind, opts) {
-  if (!fighter || !fighter.mixer) return;
-  const clip = clipFor(fighter, kind);
-  if (!clip) return;
-  const next = fighter.mixer.clipAction(clip);
-  if (fighter.action === next && next.isRunning()) return;
-  const o = opts || {};
-  next.reset();
-  next.enabled = true;
-  next.setEffectiveTimeScale(o.speed || 1);
-  next.setEffectiveWeight(1);
-  next.setLoop(o.once ? THREE.LoopOnce : THREE.LoopRepeat, o.once ? 1 : Infinity);
-  next.clampWhenFinished = !!o.once;
-  if (fighter.action && fighter.action !== next) fighter.action.fadeOut(o.fade || 0.10);
-  next.fadeIn(o.fade || 0.10).play();
-  fighter.action = next;
-  if (o.once) {
-    const restore = e => {
-      if (e.action !== next) return;
-      fighter.mixer.removeEventListener('finished', restore);
-      playExternal(fighter, 'idle', {fade:0.12});
-    };
-    fighter.mixer.addEventListener('finished', restore);
+  for(let i=0;i<2;i++){
+    const upper=segment(names.upper[i],names.lower[i]),lower=segment(names.lower[i],names.hand[i]);
+    const thigh=segment(names.thigh[i],names.calf[i]),calf=segment(names.calf[i],names.foot[i]);
+    const b=upper&&upper.bone;const sign=b?Math.sign(root.worldToLocal(b.getWorldPosition(new V())).x)||1:(i===0?1:-1);
+    rigs.push({sign,upper,lower,thigh,calf});
   }
+  return {limbs:rigs,count:rigs.reduce((n,r)=>n+['upper','lower','thigh','calf'].filter(k=>r[k]).length,0)};
 }
-function attachExternalModel(fighter, key) {
-  getModelAsset(key).then(asset => {
-    if (!fighter || !fighter.g || !fighter.g.parent) return;
-    const ext = THREE.SkeletonUtils.clone(asset.scene);
-    toonifyExternal(ext, fighter.mats);
-    ext.updateMatrixWorld(true);
-    let box = new THREE.Box3().setFromObject(ext);
-    const size = new THREE.Vector3(); box.getSize(size);
-    const desired = key === 'buu' ? 3.05 : 3.15;
-    const scale = size.y > 0.001 ? desired / size.y : 1;
-    ext.scale.setScalar(scale);
-    ext.updateMatrixWorld(true);
-    box = new THREE.Box3().setFromObject(ext);
-    const center = new THREE.Vector3(); box.getCenter(center);
-    ext.position.x -= center.x;
-    ext.position.z -= center.z;
-    ext.position.y -= box.min.y;
-    for (const ch of fighter.g.children) if (ch !== fighter.aura) ch.visible = false;
-    fighter.g.add(ext);
-    fighter.external = ext;
-    const animations = asset.animations || [];
-    if (animations.length) {
-      const mixer = new THREE.AnimationMixer(ext);
-      fighter.mixer = mixer; externalMixers.add(mixer);
-      fighter.animations = animations;
-      playExternal(fighter, 'idle', {fade:0});
+function aimSegment(seg,dir,rootQ,k){
+  if(!seg)return;
+  const target=new THREE.Quaternion().setFromUnitVectors(seg.axis,dir.normalize()).multiply(seg.rest);
+  seg.current.slerp(target,k);
+  const parentQ=seg.bone.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+  seg.bone.quaternion.copy(parentQ.multiply(rootQ).multiply(seg.current));
+  seg.bone.updateMatrixWorld(true);
+}
+function clipFor(f,kind){
+  if(f.key!=='goku')return null;
+  const exact={idle:'A_0000_23_A_STD_g001_FMC1_4LP',charge:'A_0000_23_S_BST_a001_ry1_2CG1',special:'A_0000_23_S_BST_a001_ry1_3HT1'};
+  return (f.animations||[]).find(a=>a.name===exact[kind])||null;
+}
+function playExternal(f,kind,opts){
+  if(!f||f.disposed)return;
+  const times={attack:.3,hurt:.24,death:Infinity,special:1.95};
+  if(kind==='death'){f.motionEvent={kind,t:0,duration:Infinity};return;}
+  if(f.motionEvent&&f.motionEvent.kind==='death')return;
+  if(times[kind])f.motionEvent={kind,t:0,duration:times[kind]};
+  // Only named, inspected clips are used. Never guess a cinematic clip from /hit/ or /DEM/.
+  const clip=clipFor(f,kind);if(!f.mixer||!clip)return;
+  const action=f.mixer.clipAction(clip);if(f.action===action)return;
+  if(f.action)f.action.fadeOut(.12);
+  action.reset().setLoop(THREE.LoopRepeat,Infinity).setEffectiveWeight(1).fadeIn(.12).play();f.action=action;
+}
+function updateExternal(f,o,move,dt){
+  if(!f.external||f.disposed)return;
+  f.motionTime=(f.motionTime||0)+dt;
+  if(f.motionEvent){f.motionEvent.t+=dt;if(f.motionEvent.t>=f.motionEvent.duration)f.motionEvent=null;}
+  const dead=!!o.dead||o.hp===0,air=o.pos.y>.4,moving=move&&(Math.abs(move.x)+Math.abs(move.z)>.1);
+  let state=dead?'death':o.beamPose?'beam':o.kameCharge||o.charging?'charge':o.block?'block':(f.motionEvent?f.motionEvent.kind:(moving?'move':'idle'));
+  if(f.mixer){
+    const kind=state==='charge'?'charge':'idle';
+    if(f.nativeState!==kind){playExternal(f,kind);f.nativeState=kind;}
+    f.mixer.update(dt);
+  }
+  if(!f.rig)return; // Static sculptures are explicitly reported, not advertised as rigged animation.
+  f.external.updateMatrixWorld(true);
+  const q=f.external.getWorldQuaternion(new THREE.Quaternion()),k=1-Math.exp(-18*dt);
+  const phase=f.motionTime*(moving?9:2),ev=f.motionEvent;
+  const punch=state==='attack'&&ev?Math.sin(Math.PI*Math.min(1,ev.t/.3)):0;
+  f.rig.limbs.forEach((r,i)=>{
+    const side=r.sign,swing=moving&&!air?Math.sin(phase+i*Math.PI):0;
+    let u=new V(side*.18,-.72,.35),l=new V(-side*.12,.5,.5);
+    let th=new V(side*.055,-1,swing*.55),ca=new V(0,-1,-Math.max(0,-swing)*.7);
+    if(moving&&!air){u.set(side*.14,-1,-swing*.5);l.set(0,-.5,.75);}
+    if(air){th.set(side*.1,-.85,-.3-(i?.3:0));ca.set(0,-.6,-.8);u.set(side*.3,-.85,-.3);l.set(0,-.8,.25);}
+    if(state==='block'){u.set(side*.18,-.25,.65);l.set(-side*.13,.9,.2);}
+    if(state==='charge'){u.set(side*.3,-.8,-.12);l.set(-side*.05,-.05,.8);th.z=.08;ca.z=-.18;}
+    if(state==='beam'||state==='special'){u.set(side*.1,.05,1);l.set(-side*.16,0,1);}
+    if(state==='attack'&&(f.punchSide?i===0:i===1)){u.lerp(new V(side*.03,.12,1),punch);l.lerp(new V(0,.02,1),punch);}
+    if(state==='hurt'){u.set(side*.45,-.2,.6);l.set(0,.5,.4);}
+    if(dead){u.set(side*.3,-1,.1);l.set(0,-1,.1);th.set(side*.12,-1,0);ca.set(0,-1,0);}
+    aimSegment(r.upper,u,q,k);aimSegment(r.lower,l,q,k);aimSegment(r.thigh,th,q,k);aimSegment(r.calf,ca,q,k);
+  });
+}
+function attachExternalModel(f,key){
+  f.key=key;f.modelStatus='loading';
+  getModelAsset(key).then(asset=>{
+    if(f.disposed||!f.g.parent)return;
+    const cfg=MODEL_FILES[key],model=THREE.SkeletonUtils.clone(asset.scene),ext=new THREE.Group();
+    // Normalize the wrapper, never overwrite the imported model/armature's scale or animated root.
+    ext.add(model);model.rotation.y+=cfg.yaw||0;model.updateMatrixWorld(true);
+    const skeletons=new Set();model.traverse(o=>{if(o.isSkinnedMesh)skeletons.add(o.skeleton);});
+    if(key!=='piccolo') skeletons.forEach(s=>s.pose());model.updateMatrixWorld(true);
+    let box=new THREE.Box3().setFromObject(ext),size=box.getSize(new V());
+    if(!Number.isFinite(size.y)||size.y<1e-5)throw new Error('Invalid model bounds: '+key);
+    const scale=cfg.height/size.y;model.scale.multiplyScalar(scale);model.updateMatrixWorld(true);
+    box=new THREE.Box3().setFromObject(ext);const center=box.getCenter(new V());
+    model.position.add(new V(-center.x,-box.min.y,-center.z));model.updateMatrixWorld(true);
+    toonifyExternal(model,f.mats,key,asset.diffuse,asset.piccoloClothing);
+    f.rig=buildRig(ext,key);f.modelStatus=f.rig&&f.rig.count===8?'rigged':'static';
+    for(const ch of f.g.children)if(ch!==f.aura)ch.visible=false;
+    f.g.add(ext);f.external=ext;f.animations=asset.animations||[];
+    if(key==='goku'){
+      // Rotation-only clips leave world motion and character scale under game control.
+      f.animations=f.animations.map(c=>new THREE.AnimationClip(c.name,c.duration,c.tracks.filter(t=>t.name.endsWith('.quaternion')).map(t=>t.clone()).map(t=>{t.optimize();return t;})));
+      f.mixer=new THREE.AnimationMixer(model);playExternal(f,'idle');
     }
-  }).catch(err => console.warn('Modelo externo no disponible para', key, err));
+    updateExternal(f,{pos:new V(),hp:100},null,1/60);
+  }).catch(e=>{f.modelStatus='error';console.error('No se pudo cargar '+key+':',e);});
 }
+
 
 const LOOKS = {
   goku:    { skin:0xffd6ad, torso:0xff7a1a, legs:0xff7a1a, arms:'skin', belt:0x2b5cff, boots:0x2b5cff, wrist:0x2b5cff, neck:0x2b5cff, hair:'goku', hairC:0x16131f, brow:0x16131f },
@@ -562,8 +598,10 @@ function makeFighter(key) {
   return fighter;
 }
 function removeFighter(f) {
-  if (!f) return;
-  if (f.mixer) externalMixers.delete(f.mixer);
+  if (!f || f.disposed) return;
+  f.disposed = true;
+  if (f.mixer) { f.mixer.stopAllAction(); f.mixer.uncacheRoot(f.mixer.getRoot()); externalMixers.delete(f.mixer); }
+  for (const m of new Set(f.mats)) m.dispose();
   scene.remove(f.g); scene.remove(f.shadow);
 }
 
@@ -849,13 +887,13 @@ function summon(j) {
 /* ---------- Animación de personajes (todo se interpola, nada salta) ---------- */
 function toward(obj, x, y, z, k) { const r = obj.rotation; r.x += (x - r.x) * k; r.y += (y - r.y) * k; r.z += (z - r.z) * k; }
 function pose(o, target, move, dt) {
-  const f = o.f, t = G.t;
+  const f = o.f, t = G.t, dead = !!o.dead || o.hp === 0;
   const k = 1 - Math.exp(-14 * dt), kSlow = 1 - Math.exp(-7 * dt);
   const flying = o.pos.y > 0.4;
   const mx = move ? move.x : 0, mz = move ? move.z : 0, mv = Math.abs(mx) + Math.abs(mz) > 0.1;
   f.phase += dt * (mv && !flying ? 11 : 2.4);
   const bob = flying ? Math.sin(t * 3 + f.seed) * 0.12 : (mv ? Math.abs(Math.sin(f.phase)) * 0.09 : Math.sin(f.phase) * 0.03);
-  f.g.position.set(o.pos.x, o.pos.y + (o.dead ? 0 : bob), o.pos.z);
+  f.g.position.set(o.pos.x, o.pos.y + (dead ? 0 : bob), o.pos.z);
 
   // Girar hacia el rival de forma suave
   const want = Math.atan2(target.x - o.pos.x, target.z - o.pos.z);
@@ -865,9 +903,9 @@ function pose(o, target, move, dt) {
   // Inclinarse al volar, retroceder al recibir un golpe, caer al perder
   f.hurt = Math.max(0, f.hurt - dt);
   const lunge = f.punchT > 0 ? 0.25 : 0;
-  const pitch = o.dead ? -0.3 : (flying ? 0.4 : 0.1) * mz + lunge - f.hurt * 3;
-  const roll = o.dead ? Math.PI / 2 : -(flying ? 0.35 : 0.1) * mx;
-  toward(f.g, pitch, f.g.rotation.y, roll, o.dead ? kSlow * 0.5 : kSlow);
+  const pitch = dead ? -0.3 : (f.external ? (flying ? 0.12 : 0.03) * mz + lunge * 0.15 - f.hurt * 0.5 : (flying ? 0.4 : 0.1) * mz + lunge - f.hurt * 3);
+  const roll = dead ? Math.PI / 2 : -(f.external ? (flying ? 0.12 : 0.025) : (flying ? 0.35 : 0.1)) * mx;
+  toward(f.g, pitch, f.g.rotation.y, roll, dead ? kSlow * 0.5 : kSlow);
 
   // Piernas: correr en el suelo, una pierna recogida al volar (pose típica del anime)
   const sw = mv && !flying ? Math.sin(f.phase) * 0.75 : 0;
@@ -901,6 +939,7 @@ function pose(o, target, move, dt) {
   for (const m of f.mats) m.emissive.setRGB(e, e, e);
   f.shadow.position.set(o.pos.x, 0.07, o.pos.z);
   const s = Math.max(0.3, 1 - o.pos.y / 25); f.shadow.scale.setScalar(s); f.shadow.material.opacity = 0.35 * s;
+  if (f.external) updateExternal(f, o, move, dt);
 }
 
 /* ---------- Bucle de juego ---------- */
@@ -1184,7 +1223,7 @@ const perf = { t:0, n:0, lock:0 };
 function frame(now) {
   requestAnimationFrame(frame);
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw); last = now; G.frame = (G.frame || 0) + 1;
-  for (const mixer of externalMixers) mixer.update(dt);
+  // Character mixers advance only from pose(), never while paused or hidden.
   // Resolución adaptable: si el equipo no llega a ~50 fps, baja un poco la resolución
   perf.t += raw; perf.n++;
   if (perf.t > 2) {
@@ -1199,7 +1238,7 @@ function frame(now) {
     const a = G.t * 0.15;
     camera.position.set(Math.sin(a) * 9, 3 + Math.sin(G.t * 0.3), Math.cos(a) * 9);
     camera.lookAt(0, 1.4, 0);
-    titleF.forEach((f, i) => { f.g.position.y = 0.6 + Math.sin(G.t * 2 + i) * 0.25; f.aura.material.opacity = 0.18; f.aura.material.color.setHex(i ? 0xfff27a : 0xffe066); });
+    titleF.forEach((f, i) => { f.g.position.y = 0.6 + Math.sin(G.t * 2 + i) * 0.12; f.aura.material.opacity = 0.18; f.aura.material.color.setHex(i ? 0xfff27a : 0xffe066); if (f.external) updateExternal(f, {pos:f.g.position, hp:100}, null, dt); });
   }
   pressed.clear();
   renderer.render(scene, camera);
