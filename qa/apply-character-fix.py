@@ -3,10 +3,14 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 include = root / 'qa/character-v2.inc.js'
 block = include.read_text()
-# Piccolo's FBX contains duplicated bone chains and mesh transforms at scale 100.
-# Skeleton.pose() on this asset corrupts the bind transforms (confirmed using
-# actual skinned vertex bounds). Preserve its already-correct imported rest pose.
-block = block.replace('skeletons.forEach(s=>s.pose());model.updateMatrixWorld(true);', "if(key!=='piccolo') skeletons.forEach(s=>s.pose());model.updateMatrixWorld(true);")
+# Preserve Piccolo's imported bind pose: resetting its duplicated chains
+# multiplies skin deformation by 100 and rotates it out of the game arena.
+if "if(key!=='piccolo') skeletons" not in block:
+    block = block.replace('skeletons.forEach(s=>s.pose());model.updateMatrixWorld(true);', "if(key!=='piccolo') skeletons.forEach(s=>s.pose());model.updateMatrixWorld(true);")
+# Piccolo's UVs live near (-32,+32), not in [0,1]. Its atlas must repeat;
+# ClampToEdge otherwise paints every surface with one yellow corner texel.
+if 'diffuse.wrapS=diffuse.wrapT' not in block:
+    block = block.replace('  if(diffuse){diffuse.encoding', "  if(diffuse&&key==='piccolo')diffuse.wrapS=diffuse.wrapT=THREE.RepeatWrapping;\n  if(diffuse){diffuse.encoding")
 include.write_text(block)
 for filename in ['index.html', 'juego.html']:
     p = root / 'goku-alianzas-z' / filename
