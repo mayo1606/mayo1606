@@ -28,22 +28,29 @@ async function loadExternalAsset(key){
   else if(c.type==='fbx'){scene=await promiseLoad(fbxLoader,c.url);animations=scene.animations||[];}
   else {const mats=await promiseLoad(mtlLoader,c.mtl);mats.preload();scene=await promiseLoad(new THREE.OBJLoader(modelManager).setMaterials(mats),c.url);}
   const diffuse=c.diffuse?await promiseLoad(textureLoader,c.diffuse):null;
+  if(diffuse&&key==='piccolo')diffuse.wrapS=diffuse.wrapT=THREE.RepeatWrapping;
   if(diffuse){diffuse.encoding=THREE.sRGBEncoding;diffuse.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());}
-  return {scene,animations,diffuse};
+  const piccoloClothing=key==='piccolo'?await promiseLoad(textureLoader,'assets/models/piccolo/piccolo_gi_d.png'):null;
+  if(piccoloClothing){piccoloClothing.encoding=THREE.sRGBEncoding;piccoloClothing.wrapS=piccoloClothing.wrapT=THREE.RepeatWrapping;piccoloClothing.anisotropy=4;}
+  return {scene,animations,diffuse,piccoloClothing};
 }
 function getModelAsset(key){
   if(!MODEL_CACHE.has(key))MODEL_CACHE.set(key,loadExternalAsset(key).catch(e=>{MODEL_CACHE.delete(key);throw e;}));
   return MODEL_CACHE.get(key);
 }
-function toonifyExternal(root,targetMats,key,diffuse){
+function toonifyExternal(root,targetMats,key,diffuse,piccoloClothing){
   root.traverse(o=>{
     if(o.isLight||o.isCamera)o.visible=false;
     if(!o.isMesh)return;
+    // This surface duplicates exactly 33,043 body triangles, with incompatible UVs.
+    // It is NOT an outline shell: its normals and positions duplicate the original parts.
+    if(key==='piccolo'&&/mesh13008/.test(o.name)){o.visible=false;return;}
+    const garment=key==='piccolo'&&/\+40-mesh/.test(o.name);
     o.frustumCulled=false;
     const old=Array.isArray(o.material)?o.material:[o.material];
     const next=old.map(m=>{
       const name=(m&&m.name)||'',outline=key==='cell'&&/OUTLINE/i.test(o.name+' '+name);
-      const map=outline?null:(diffuse||(m&&m.map)||null);
+      const map=outline?null:((garment&&piccoloClothing)||diffuse||(m&&m.map)||null);
       const color=outline?new THREE.Color(0x101321):(map?new THREE.Color(0xffffff):(m&&m.color?m.color.clone():new THREE.Color(0xffffff)));
       // FBX diffuse colors are sRGB; glTF factors are already linear. Never convert normal/alpha data.
       if(!map&&MODEL_FILES[key].type==='fbx')color.convertSRGBToLinear();
@@ -153,13 +160,13 @@ function attachExternalModel(f,key){
     // Normalize the wrapper, never overwrite the imported model/armature's scale or animated root.
     ext.add(model);model.rotation.y+=cfg.yaw||0;model.updateMatrixWorld(true);
     const skeletons=new Set();model.traverse(o=>{if(o.isSkinnedMesh)skeletons.add(o.skeleton);});
-    skeletons.forEach(s=>s.pose());model.updateMatrixWorld(true);
+    if(key!=='piccolo') skeletons.forEach(s=>s.pose());model.updateMatrixWorld(true);
     let box=new THREE.Box3().setFromObject(ext),size=box.getSize(new V());
     if(!Number.isFinite(size.y)||size.y<1e-5)throw new Error('Invalid model bounds: '+key);
     const scale=cfg.height/size.y;model.scale.multiplyScalar(scale);model.updateMatrixWorld(true);
     box=new THREE.Box3().setFromObject(ext);const center=box.getCenter(new V());
     model.position.add(new V(-center.x,-box.min.y,-center.z));model.updateMatrixWorld(true);
-    toonifyExternal(model,f.mats,key,asset.diffuse);
+    toonifyExternal(model,f.mats,key,asset.diffuse,asset.piccoloClothing);
     f.rig=buildRig(ext,key);f.modelStatus=f.rig&&f.rig.count===8?'rigged':'static';
     for(const ch of f.g.children)if(ch!==f.aura)ch.visible=false;
     f.g.add(ext);f.external=ext;f.animations=asset.animations||[];
