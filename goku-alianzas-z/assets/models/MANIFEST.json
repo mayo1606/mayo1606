@@ -1,0 +1,32 @@
+{
+  "goku": {
+    "format": "GLB",
+    "rig": true,
+    "animations": 13
+  },
+  "vegeta": {
+    "format": "FBX",
+    "rig": true,
+    "animations": true
+  },
+  "piccolo": {
+    "format": "FBX",
+    "rig": true,
+    "animations": false
+  },
+  "frieza": {
+    "format": "FBX",
+    "rig": false,
+    "animations": false
+  },
+  "cell": {
+    "format": "glTF",
+    "rig": true,
+    "animations": 0
+  },
+  "buu": {
+    "format": "OBJ",
+    "rig": false,
+    "animations": false
+  }
+}
